@@ -1,10 +1,10 @@
 import {cloneElement, JSX } from "react";
 
 export const FormHeader = ({ icon, title, description }: { icon: JSX.Element, title: string, description: string }) => {
-    const clonedIcon = cloneElement(icon, { className: "drop-shadow-lg drop-shadow-blue-500/70 text-primary" });
+    const clonedIcon = cloneElement(icon, { className: "drop-shadow-lg drop-shadow-red-500/70 text-primary" });
     return (
         <header className={"flex items-center gap-4"}>
-       <div className={"bg-linear-to-tr from-primary/20 to-blue-500/20 rounded-xl p-3 flex items-center justify-center"}>
+       <div className={"bg-linear-to-tr from-primary/20 to-red-500/20 p-3 flex items-center justify-center"}>
                 { clonedIcon }
             </div>
 

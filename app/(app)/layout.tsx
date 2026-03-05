@@ -1,14 +1,19 @@
 import {Navbar} from "@/components/navbar";
 import {ReactNode} from "react";
+import {Footer} from "@/components/footer";
 
 const AppLayout = ({ children }: { children: ReactNode }) => {
     return (
-        <div>
+        <div className={"min-h-screen flex flex-col justify-between"}>
+            <div>
             <Navbar />
 
-            <div className={"max-w-5xl mx-auto flex justify-center w-full min-h-[90vh]"}>
+            <div className={"max-w-5xl mx-auto"}>
             { children }
             </div>
+            </div>
+
+            <Footer />
         </div>
     )
 }
