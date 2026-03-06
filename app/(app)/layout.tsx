@@ -8,7 +8,7 @@ const AppLayout = ({ children }: { children: ReactNode }) => {
             <div>
             <Navbar />
 
-            <div className={"max-w-5xl mx-auto"}>
+            <div className={"max-w-5xl mx-auto mt-16"}>
             { children }
             </div>
             </div>
