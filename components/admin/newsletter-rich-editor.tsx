@@ -56,8 +56,8 @@ export const NewsletterRichEditor = ({ value, onChange, placeholder, className }
     useEffect(() => {
         if (!editor) return;
         const current = editor.getHTML();
-        if (value && value !== current) editor.commands.setContent(value, false);
-        if (!value && current !== "<p></p>") editor.commands.setContent("<p></p>", false);
+        if (value && value !== current) editor.commands.setContent(value, { emitUpdate: false });
+        if (!value && current !== "<p></p>") editor.commands.setContent("<p></p>", { emitUpdate: false });
     }, [value, editor]);
 
     if (!editor) return null;

@@ -1,12 +1,13 @@
 "use client";
 
+import { Suspense } from "react";
 import {useSearchParams} from "next/navigation";
 import {trpc} from "@/trpc/client";
 import {useEffect} from "react";
 import {FormHeader} from "@/components/header";
 import {Check, Inbox, XIcon} from "lucide-react";
 
-const ConfirmPage = () => {
+function ConfirmContent() {
     const params = useSearchParams();
     const token = params.get("token") ?? "";
 
@@ -23,4 +24,10 @@ const ConfirmPage = () => {
     return <div className={"mx-auto flex justify-center pt-12"}><FormHeader icon={<Check />} title={"Success you're verified"} description={"You will now recieve our weekly newsletter!"} /></div>
 }
 
-export default ConfirmPage;
+export default function ConfirmPage() {
+    return (
+        <Suspense fallback={<p className={"text-center pt-12"}>Loading...</p>}>
+            <ConfirmContent />
+        </Suspense>
+    );
+}

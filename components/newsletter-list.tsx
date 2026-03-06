@@ -80,8 +80,9 @@ export function NewsletterList() {
                     <PaginationContent>
                         <PaginationItem>
                             <PaginationPrevious
+                                // size={"icon"}
                                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                                disabled={page === 1}
+                                // disabled={page === 1}
                             />
                         </PaginationItem>
 
@@ -93,6 +94,7 @@ export function NewsletterList() {
                             ) : (
                                 <PaginationItem key={p}>
                                     <PaginationLink
+                                        // size={"icon"}
                                         isActive={page === p}
                                         onClick={() => setPage(p as number)}
                                     >
@@ -104,8 +106,9 @@ export function NewsletterList() {
 
                         <PaginationItem>
                             <PaginationNext
+                                // size={"icon"}
                                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                                disabled={page === totalPages}
+                                // disabled={page === totalPages}
                             />
                         </PaginationItem>
                     </PaginationContent>
