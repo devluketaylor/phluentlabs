@@ -15,6 +15,7 @@ import {
 import {
     Dialog,
     DialogContent,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
     DialogTrigger,
@@ -50,6 +51,10 @@ export function NewslettersTable() {
         onSuccess: () => utils.adminNewsletter.list.invalidate(),
     });
 
+    const send = trpc.adminNewsletter.send.useMutation({
+        onSuccess: () => utils.adminNewsletter.list.invalidate(),
+    });
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -64,17 +69,17 @@ export function NewslettersTable() {
 
             <Card className="overflow-hidden">
                 <div className="grid grid-cols-12 gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
-                    <div className="col-span-4">Subject</div>
-                    <div className="col-span-3">Preheader</div>
+                    <div className="col-span-3">Subject</div>
+                    <div className="col-span-2">Preheader</div>
                     <div className="col-span-2">Status</div>
                     <div className="col-span-2">Created</div>
-                    <div className="col-span-1 text-right">Actions</div>
+                    <div className="col-span-3 text-right">Actions</div>
                 </div>
 
                 {list.data?.items.map((n) => (
                     <div key={n.id} className="grid grid-cols-12 gap-2 px-3 py-2 items-center border-b last:border-0">
-                        <div className="col-span-4 truncate text-sm font-medium">{n.subject}</div>
-                        <div className="col-span-3 truncate text-sm text-muted-foreground">
+                        <div className="col-span-3 truncate text-sm font-medium">{n.subject}</div>
+                        <div className="col-span-2 truncate text-sm text-muted-foreground">
                             {n.preheader ?? "—"}
                         </div>
                         <div className="col-span-2">
@@ -87,12 +92,20 @@ export function NewslettersTable() {
                                 year: "numeric",
                             })}
                         </div>
-                        <div className="col-span-1 flex justify-end gap-1">
+                        <div className="col-span-3 flex justify-end gap-1">
                             <EditNewsletterDialog
                                 newsletter={n}
                                 onSave={(data) => update.mutate(data)}
                                 saving={update.isPending}
                             />
+                            {n.status !== "sent" && (
+                                <SendNewsletterDialog
+                                    newsletter={n}
+                                    onSend={() => send.mutate({ id: n.id })}
+                                    sending={send.isPending}
+                                    error={send.error?.message}
+                                />
+                            )}
                             <Button
                                 variant="destructive"
                                 size="sm"
@@ -122,6 +135,51 @@ export function NewslettersTable() {
                 )}
             </Card>
         </div>
+    );
+}
+
+function SendNewsletterDialog({
+    newsletter,
+    onSend,
+    sending,
+    error,
+}: {
+    newsletter: { id: string; subject: string };
+    onSend: () => void;
+    sending: boolean;
+    error?: string;
+}) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm" variant="default">Send</Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Send newsletter?</DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-muted-foreground">
+                    This will immediately send <span className="font-medium text-foreground">&ldquo;{newsletter.subject}&rdquo;</span> to all active subscribers. This cannot be undone.
+                </p>
+                {error && <p className="text-sm text-destructive">{error}</p>}
+                <DialogFooter>
+                    <Button variant="secondary" onClick={() => setOpen(false)} disabled={sending}>
+                        Cancel
+                    </Button>
+                    <Button
+                        disabled={sending}
+                        onClick={() => {
+                            onSend();
+                            setOpen(false);
+                        }}
+                    >
+                        {sending ? "Sending…" : "Send now"}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 

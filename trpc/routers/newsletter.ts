@@ -1,7 +1,14 @@
 import { adminProcedure, publicProcedure, router } from "@/trpc/server";
 import { z } from "zod";
 import { newsletters } from "@/db/schemas/newsletters";
+import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
+import { subscribers } from "@/db/schemas/subscribers";
 import { count, desc, eq } from "drizzle-orm";
+import { Resend } from "resend";
+import { signSubscriberToken } from "@/lib/subscriber-token";
+import { TRPCError } from "@trpc/server";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const newsletterStatus = z.enum(["draft", "scheduled", "sent"]);
 
@@ -76,6 +83,72 @@ export const adminNewsletterRouter = router({
         .mutation(async ({ input, ctx }) => {
             await ctx.db.delete(newsletters).where(eq(newsletters.id, input.id));
             return { ok: true };
+        }),
+
+    send: adminProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .mutation(async ({ input, ctx }) => {
+            const [newsletter] = await ctx.db
+                .select()
+                .from(newsletters)
+                .where(eq(newsletters.id, input.id));
+
+            if (!newsletter) throw new TRPCError({ code: "NOT_FOUND", message: "Newsletter not found" });
+            if (newsletter.status === "sent") throw new TRPCError({ code: "BAD_REQUEST", message: "Newsletter already sent" });
+
+            const allSubscribers = await ctx.db
+                .select({ id: subscribers.id, email: subscribers.email })
+                .from(subscribers)
+                .where(eq(subscribers.status, "subscribed"));
+
+            if (allSubscribers.length === 0) return { ok: true, sent: 0 };
+
+            const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
+
+            // Send in batches of 100 (Resend limit)
+            const BATCH_SIZE = 100;
+            for (let i = 0; i < allSubscribers.length; i += BATCH_SIZE) {
+                const batch = allSubscribers.slice(i, i + BATCH_SIZE);
+
+                const emails = await Promise.all(
+                    batch.map(async (sub) => {
+                        const unsubToken = await signSubscriberToken({ subId: sub.id, email: sub.email, scope: "unsub" });
+                        const unsubUrl = new URL("/unsubscribe", appUrl);
+                        unsubUrl.searchParams.set("token", unsubToken);
+
+                        const html = `${newsletter.html}<p style="margin-top:32px;font-size:12px;color:#888;">
+                            <a href="${unsubUrl.toString()}">Unsubscribe</a>
+                        </p>`;
+
+                        return {
+                            from: fromEmail,
+                            to: sub.email,
+                            subject: newsletter.subject,
+                            html,
+                        };
+                    })
+                );
+
+                await resend.batch.send(emails);
+
+                await ctx.db.insert(newsletterRecipients).values(
+                    batch.map((sub) => ({
+                        id: crypto.randomUUID(),
+                        newsletterId: newsletter.id,
+                        subscriberId: sub.id,
+                        status: "sent",
+                        sentAt: new Date(),
+                    }))
+                ).onConflictDoNothing();
+            }
+
+            await ctx.db
+                .update(newsletters)
+                .set({ status: "sent", sentAt: new Date(), updatedAt: new Date() })
+                .where(eq(newsletters.id, input.id));
+
+            return { ok: true, sent: allSubscribers.length };
         }),
 });
 
