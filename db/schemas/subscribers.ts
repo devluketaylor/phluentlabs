@@ -9,4 +9,5 @@ export const subscribers = pgTable("subscribers", {
     createdAt: timestamp("created_at").defaultNow().notNull(),
     confirmedAt: timestamp("confirmed_at"),
     unsubscribedAt: timestamp("unsubscribed_at"),
+    updatedAt: timestamp("updated_at")
 })
