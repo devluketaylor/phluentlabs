@@ -1,5 +1,14 @@
 import { adminProcedure, publicProcedure, router } from "@/trpc/server";
 import { z } from "zod";
+
+function toSlug(text: string): string {
+    return text
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, "")
+        .replace(/[\s_-]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+}
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
@@ -43,15 +52,20 @@ export const adminNewsletterRouter = router({
         )
         .mutation(async ({ input, ctx }) => {
             const id = crypto.randomUUID();
+            const baseSlug = toSlug(input.subject.trim());
+            const slug = baseSlug
+                ? `${baseSlug}-${id.slice(0, 8)}`
+                : id.slice(0, 8);
             await ctx.db.insert(newsletters).values({
                 id,
+                slug,
                 subject: input.subject.trim(),
                 html: input.html,
                 preheader: input.preheader ?? null,
                 status: "draft",
                 createdBy: ctx.adminUserId,
             });
-            return { ok: true, id };
+            return { ok: true, id, slug };
         }),
 
     update: adminProcedure
@@ -164,6 +178,7 @@ export const newsletterRouter = router({
                 ctx.db
                     .select({
                         id: newsletters.id,
+                        slug: newsletters.slug,
                         subject: newsletters.subject,
                         preheader: newsletters.preheader,
                         createdAt: newsletters.createdAt,

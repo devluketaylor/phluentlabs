@@ -4,7 +4,7 @@ import {useSearchParams} from "next/navigation";
 import {trpc} from "@/trpc/client";
 import {useEffect} from "react";
 import {FormHeader} from "@/components/header";
-import {Inbox} from "lucide-react";
+import {Check, Inbox, XIcon} from "lucide-react";
 
 const ConfirmPage = () => {
     const params = useSearchParams();
@@ -17,10 +17,10 @@ const ConfirmPage = () => {
         confirm.mutate({ token })
     }, [token]);
 
-    if (!token) return <FormHeader icon={<Inbox />} title={"Confirm you email"} description={"Check you inbox and verify your email."} />
-    if (confirm.isPending) return <p>Confirming...</p>
-    if (confirm.isError) return <p>Invalid or expired link.</p>
-    return <p>You're subscribed!</p>
+    if (!token) return <div className={"mx-auto flex justify-center pt-12"}><FormHeader icon={<Inbox />} title={"Confirm you email"} description={"Check you inbox and verify your email."} /></div>
+    if (confirm.isPending) return <p className={"text-center pt-12"}>Confirming...</p>
+    if (confirm.isError) return <div className={"mx-auto flex justify-center pt-12"}><FormHeader icon={<XIcon/>} title={"Invalid or expired link"} description={"This link has expired, try subscribing again."} /></div>
+    return <div className={"mx-auto flex justify-center pt-12"}><FormHeader icon={<Check />} title={"Success you're verified"} description={"You will now recieve our weekly newsletter!"} /></div>
 }
 
 export default ConfirmPage;

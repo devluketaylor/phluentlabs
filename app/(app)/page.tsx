@@ -118,15 +118,16 @@ export default function HomePage() {
             {/* Hero */}
             <section className="py-16 text-center space-y-4">
                 <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs text-muted-foreground mb-2">
-                    Weekly · For developers
+                    every sunday · for developers
                 </div>
                 <h1 className="text-4xl font-bold tracking-tight">
                     <span className="bg-linear-to-tr from-primary to-red-500 bg-clip-text text-transparent">
-                        PhluentLabs
+                        Phluent
                     </span>
+                    <span className={"text-muted-foreg"}>Labs</span>
                 </h1>
                 <p className="text-muted-foreground text-lg max-w-md mx-auto leading-relaxed">
-                    Weekly insights on tools, patterns, and code — straight to your inbox.
+                    What I'm noticing while building the web. — straight to your inbox.
                 </p>
                 <p className="text-sm text-muted-foreground">
                     Join <span className="font-semibold text-foreground">100+</span> developers already subscribed.
@@ -154,7 +155,7 @@ export default function HomePage() {
                                         </Button>
                                     )}
                                     {!isLastStep ? (
-                                        <Button type="button" onClick={next} className="w-full">
+                                        <Button type="button" onClick={next}>
                                             Continue
                                         </Button>
                                     ) : (
@@ -162,7 +163,6 @@ export default function HomePage() {
                                             type="button"
                                             onClick={submit}
                                             disabled={subscribeRequest.isPending}
-                                            className="w-full"
                                         >
                                             {subscribeRequest.isPending ? "Subscribing..." : "Subscribe"}
                                         </Button>

@@ -4,14 +4,36 @@ import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import type { Metadata } from "next";
 
-export default async function IssuePage({ params }: { params: Promise<{ id: string }> }) {
-    const { id } = await params;
+type Props = { params: Promise<{ slug: string }> };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+    const { slug } = await params;
+    const [issue] = await db
+        .select({ subject: newsletters.subject, preheader: newsletters.preheader })
+        .from(newsletters)
+        .where(eq(newsletters.slug, slug));
+
+    if (!issue) return {};
+
+    return {
+        title: `${issue.subject} | PhluentLabs`,
+        description: issue.preheader ?? issue.subject,
+        openGraph: {
+            title: issue.subject,
+            description: issue.preheader ?? issue.subject,
+        },
+    };
+}
+
+export default async function IssuePage({ params }: Props) {
+    const { slug } = await params;
 
     const [issue] = await db
         .select()
         .from(newsletters)
-        .where(eq(newsletters.id, id));
+        .where(eq(newsletters.slug, slug));
 
     if (!issue) notFound();
 

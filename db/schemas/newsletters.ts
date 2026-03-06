@@ -2,6 +2,7 @@ import {pgTable, text, timestamp} from "drizzle-orm/pg-core";
 
 export const newsletters = pgTable("newsletters", {
     id: text("id").primaryKey(),
+    slug: text("slug").unique(),
     subject: text("subject").notNull(),
     preheader: text("preheader"),
     html: text("html").notNull(),

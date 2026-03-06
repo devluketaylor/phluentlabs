@@ -10,7 +10,7 @@ import {authClient} from "@/lib/auth-client";
 
 export const Navbar = () => {
     return (
-        <nav className={"bg-navbar border-b px-3 fixed w-full bg-background/10 backdrop-blur-2xl"}>
+        <nav className={"bg-navbar border-b px-3 fixed w-full bg-background/20 backdrop-blur-2xl"}>
             <div className={"flex items-center justify-between max-w-6xl mx-auto py-3"}>
             <div>
                 <Link href={"/"}>

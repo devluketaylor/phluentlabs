@@ -50,7 +50,7 @@ export function NewsletterList() {
                 {data.items.map((issue) => (
                     <li key={issue.id}>
                         <Link
-                            href={`/issues/${issue.id}`}
+                            href={`/issues/${issue.slug ?? issue.id}`}
                             className="group flex items-start justify-between gap-4 rounded-xl border p-4 hover:bg-muted/50 transition-colors"
                         >
                             <div className="flex flex-col gap-1 min-w-0">

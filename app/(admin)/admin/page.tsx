@@ -3,10 +3,7 @@
 import { useState } from "react";
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
 import { FormHeader } from "@/components/header";
-import { MailPlus, UserSearch, Newspaper } from "lucide-react";
-import { SubscribersTable } from "@/components/admin/subscribers-table";
-import { NewslettersTable } from "@/components/admin/newsletters-table";
-import { Separator } from "@/components/ui/separator";
+import { MailPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { trpc } from "@/trpc/client";
@@ -29,7 +26,7 @@ const AdminPage = () => {
     }
 
     return (
-        <div className="max-w-5xl mx-auto pt-12 pb-16 px-4">
+        <div className="max-w-4xl mx-auto pt-12 pb-16 px-4">
             <div className="space-y-4">
                 <FormHeader
                     icon={<MailPlus />}
@@ -55,24 +52,6 @@ const AdminPage = () => {
                 {create.error && (
                     <p className="text-sm text-destructive">{create.error.message}</p>
                 )}
-
-                <Separator className="my-12" />
-
-                <FormHeader
-                    icon={<Newspaper />}
-                    title="Manage Newsletters"
-                    description="Edit, change status, or delete existing newsletter issues."
-                />
-                <NewslettersTable />
-
-                <Separator className="my-12" />
-
-                <FormHeader
-                    icon={<UserSearch />}
-                    title="Manage Subscribers"
-                    description="Manage newsletter subscribers below."
-                />
-                <SubscribersTable />
             </div>
         </div>
     );
