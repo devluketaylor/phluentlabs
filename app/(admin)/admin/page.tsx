@@ -10,19 +10,21 @@ import { trpc } from "@/trpc/client";
 
 const AdminPage = () => {
     const [subject, setSubject] = useState("");
+    const [slug, setSlug] = useState("");
     const [html, setHtml] = useState("<p></p>");
 
     const utils = trpc.useUtils();
     const create = trpc.adminNewsletter.create.useMutation({
         onSuccess: () => {
             setSubject("");
+            setSlug("");
             setHtml("<p></p>");
             utils.adminNewsletter.list.invalidate();
         },
     });
 
     async function onSave() {
-        await create.mutateAsync({ subject, html });
+        await create.mutateAsync({ subject, html, slug: slug || undefined });
     }
 
     return (
@@ -38,6 +40,16 @@ const AdminPage = () => {
                     onChange={(e) => setSubject(e.target.value)}
                     placeholder="Subject line"
                 />
+                <div className="space-y-1">
+                    <Input
+                        value={slug}
+                        onChange={(e) => setSlug(e.target.value)}
+                        placeholder="Custom slug (optional — auto-generated from subject if blank)"
+                    />
+                    <p className="text-xs text-muted-foreground px-1">
+                        URL: /issues/{slug.trim() || "auto-generated-from-subject"}-xxxxxxxx
+                    </p>
+                </div>
                 <NewsletterRichEditor
                     value={html}
                     onChange={setHtml}

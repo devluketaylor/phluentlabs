@@ -190,6 +190,7 @@ function EditNewsletterDialog({
 }: {
     newsletter: {
         id: string;
+        slug: string | null;
         subject: string;
         preheader: string | null;
         html: string;
@@ -201,11 +202,13 @@ function EditNewsletterDialog({
         html: string;
         preheader?: string;
         status: NewsletterStatus;
+        slug?: string;
     }) => void;
     saving: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const [subject, setSubject] = useState(newsletter.subject);
+    const [slug, setSlug] = useState(newsletter.slug ?? "");
     const [preheader, setPreheader] = useState(newsletter.preheader ?? "");
     const [html, setHtml] = useState(newsletter.html);
     const [status, setStatus] = useState<NewsletterStatus>(newsletter.status as NewsletterStatus);
@@ -213,6 +216,7 @@ function EditNewsletterDialog({
     useEffect(() => {
         if (!open) return;
         setSubject(newsletter.subject);
+        setSlug(newsletter.slug ?? "");
         setPreheader(newsletter.preheader ?? "");
         setHtml(newsletter.html);
         setStatus(newsletter.status as NewsletterStatus);
@@ -255,6 +259,16 @@ function EditNewsletterDialog({
                     </div>
 
                     <div className="space-y-2">
+                        <div className="text-sm font-medium">Slug</div>
+                        <Input
+                            value={slug}
+                            onChange={(e) => setSlug(e.target.value)}
+                            placeholder="custom-slug (leave blank to keep existing)"
+                        />
+                        <p className="text-xs text-muted-foreground">URL: /issues/{slug.trim() || newsletter.slug || newsletter.id}-xxxxxxxx</p>
+                    </div>
+
+                    <div className="space-y-2">
                         <div className="text-sm font-medium">Preheader <span className="text-muted-foreground font-normal">(optional)</span></div>
                         <Input
                             value={preheader}
@@ -285,6 +299,7 @@ function EditNewsletterDialog({
                                     html,
                                     preheader: preheader.trim() || undefined,
                                     status,
+                                    slug: slug.trim() || undefined,
                                 });
                                 setOpen(false);
                             }}

@@ -1,6 +1,6 @@
 import { db } from "@/db/client";
 import { newsletters } from "@/db/schemas/newsletters";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -8,12 +8,17 @@ import type { Metadata } from "next";
 
 type Props = { params: Promise<{ slug: string }> };
 
+async function getIssue(slug: string) {
+    const [issue] = await db
+        .select()
+        .from(newsletters)
+        .where(or(eq(newsletters.slug, slug), eq(newsletters.id, slug)));
+    return issue ?? null;
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const { slug } = await params;
-    const [issue] = await db
-        .select({ subject: newsletters.subject, preheader: newsletters.preheader })
-        .from(newsletters)
-        .where(eq(newsletters.slug, slug));
+    const issue = await getIssue(slug);
 
     if (!issue) return {};
 
@@ -30,10 +35,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function IssuePage({ params }: Props) {
     const { slug } = await params;
 
-    const [issue] = await db
-        .select()
-        .from(newsletters)
-        .where(eq(newsletters.slug, slug));
+    const issue = await getIssue(slug);
 
     if (!issue) notFound();
 

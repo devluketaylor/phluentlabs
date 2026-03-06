@@ -48,11 +48,14 @@ export const adminNewsletterRouter = router({
                 subject: z.string().min(1),
                 html: z.string().min(1),
                 preheader: z.string().optional(),
+                slug: z.string().optional(),
             })
         )
         .mutation(async ({ input, ctx }) => {
             const id = crypto.randomUUID();
-            const baseSlug = toSlug(input.subject.trim());
+            const baseSlug = input.slug?.trim()
+                ? toSlug(input.slug.trim())
+                : toSlug(input.subject.trim());
             const slug = baseSlug
                 ? `${baseSlug}-${id.slice(0, 8)}`
                 : id.slice(0, 8);
@@ -76,6 +79,7 @@ export const adminNewsletterRouter = router({
                 html: z.string().min(1),
                 preheader: z.string().optional(),
                 status: newsletterStatus,
+                slug: z.string().optional(),
             })
         )
         .mutation(async ({ input, ctx }) => {
@@ -86,6 +90,7 @@ export const adminNewsletterRouter = router({
                     html: input.html,
                     preheader: input.preheader ?? null,
                     status: input.status,
+                    slug: input.slug?.trim() ? toSlug(input.slug.trim()) : undefined,
                     updatedAt: new Date(),
                 })
                 .where(eq(newsletters.id, input.id));
