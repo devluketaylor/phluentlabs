@@ -44,10 +44,12 @@ export function NewsletterList() {
         return [1, "...", page - 1, page, page + 1, "...", totalPages];
     };
 
+    const filter = data.items.filter((item) => item.status === "sent")
+
     return (
         <div className="space-y-6">
             <ul className="space-y-3">
-                {data.items.map((issue) => (
+                {filter.map((issue) => (
                     <li key={issue.id}>
                         <Link
                             href={`/issues/${issue.slug ?? issue.id}`}

@@ -187,6 +187,7 @@ export const newsletterRouter = router({
                         subject: newsletters.subject,
                         preheader: newsletters.preheader,
                         createdAt: newsletters.createdAt,
+                        status: newsletters.status,
                     })
                     .from(newsletters)
                     .orderBy(desc(newsletters.createdAt))
