@@ -64,6 +64,7 @@ CREATE TABLE "newsletter_recipients" (
 --> statement-breakpoint
 CREATE TABLE "newsletters" (
 	"id" text PRIMARY KEY NOT NULL,
+	"slug" text,
 	"subject" text NOT NULL,
 	"preheader" text,
 	"html" text NOT NULL,
@@ -72,7 +73,8 @@ CREATE TABLE "newsletters" (
 	"sent_at" timestamp,
 	"created_by" text NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "newsletters_slug_unique" UNIQUE("slug")
 );
 --> statement-breakpoint
 CREATE TABLE "subscribers" (
@@ -84,6 +86,7 @@ CREATE TABLE "subscribers" (
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"confirmed_at" timestamp,
 	"unsubscribed_at" timestamp,
+	"updated_at" timestamp,
 	CONSTRAINT "subscribers_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint

@@ -1,1 +1,0 @@
-ALTER TABLE "subscribers" ADD COLUMN "updated_at" timestamp;

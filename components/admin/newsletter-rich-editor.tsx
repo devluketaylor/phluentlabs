@@ -1,14 +1,16 @@
 "use client";
 
-import {useEffect, useState} from "react";
-import {EditorContent, useEditor} from "@tiptap/react";
+import { useEffect, useState } from "react";
+import { EditorContent, useEditor } from "@tiptap/react";
 import Underline from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
-import {Placeholder} from "@tiptap/extensions";
-import {Button} from "@/components/ui/button";
-import {Input} from "@/components/ui/input";
-import {Separator} from "@/components/ui/separator";
+import Image from "@tiptap/extension-image";
+import { Placeholder } from "@tiptap/extensions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { UploadButton } from "@/lib/uploadthing";
 
 type Props = {
     value: string;
@@ -17,14 +19,19 @@ type Props = {
     className?: string;
 };
 
-export const NewsletterRichEditor = ({ value, onChange, placeholder, className }: Props) => {
+export const NewsletterRichEditor = ({
+                                         value,
+                                         onChange,
+                                         placeholder,
+                                         className,
+                                     }: Props) => {
     const [link, setLink] = useState("");
 
     const editor = useEditor({
         immediatelyRender: false,
         extensions: [
             StarterKit.configure({
-                heading: { levels: [1,2,3] },
+                heading: { levels: [1, 2, 3] },
                 bulletList: { keepMarks: true, keepAttributes: false },
                 orderedList: { keepMarks: true, keepAttributes: false },
             }),
@@ -36,45 +43,60 @@ export const NewsletterRichEditor = ({ value, onChange, placeholder, className }
                 HTMLAttributes: {
                     rel: "noopener noreferrer",
                     target: "_blank",
-                }
+                },
+            }),
+            Image.configure({
+                inline: false,
+                allowBase64: false,
+                HTMLAttributes: {
+                    class: "my-4 rounded-md max-w-full h-auto",
+                },
             }),
             Placeholder.configure({
-                placeholder: placeholder ?? "Write your newsletter..."
-            })
+                placeholder: placeholder ?? "Write your newsletter...",
+            }),
         ],
         content: value || "<p></p>",
         onUpdate: ({ editor }) => {
-            onChange(editor.getHTML())
+            onChange(editor.getHTML());
         },
         editorProps: {
             attributes: {
-                class: "prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[260px] px-3 py-2",
-            }
-        }
+                class:
+                    "prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[260px] px-3 py-2",
+            },
+        },
     });
 
     useEffect(() => {
         if (!editor) return;
+
         const current = editor.getHTML();
-        if (value && value !== current) editor.commands.setContent(value, { emitUpdate: false });
-        if (!value && current !== "<p></p>") editor.commands.setContent("<p></p>", { emitUpdate: false });
+
+        if (value && value !== current) {
+            editor.commands.setContent(value, { emitUpdate: false });
+        }
+
+        if (!value && current !== "<p></p>") {
+            editor.commands.setContent("<p></p>", { emitUpdate: false });
+        }
     }, [value, editor]);
 
     if (!editor) return null;
 
     const setOrUnsetLink = () => {
         const url = link.trim();
+
         if (!url) {
             editor.chain().focus().extendMarkRange("link").unsetLink().run();
             return;
         }
 
         editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
-    }
+    };
 
     return (
         <div className={["w-full rounded-md border bg-background", className].filter(Boolean).join(" ")}>
-            {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-1 p-2">
                 <Button
                     type="button"
@@ -84,6 +106,7 @@ export const NewsletterRichEditor = ({ value, onChange, placeholder, className }
                 >
                     Bold
                 </Button>
+
                 <Button
                     type="button"
                     variant={editor.isActive("italic") ? "default" : "secondary"}
@@ -92,6 +115,7 @@ export const NewsletterRichEditor = ({ value, onChange, placeholder, className }
                 >
                     Italic
                 </Button>
+
                 <Button
                     type="button"
                     variant={editor.isActive("underline") ? "default" : "secondary"}
@@ -111,6 +135,7 @@ export const NewsletterRichEditor = ({ value, onChange, placeholder, className }
                 >
                     H1
                 </Button>
+
                 <Button
                     type="button"
                     variant={editor.isActive("heading", { level: 2 }) ? "default" : "secondary"}
@@ -119,6 +144,7 @@ export const NewsletterRichEditor = ({ value, onChange, placeholder, className }
                 >
                     H2
                 </Button>
+
                 <Button
                     type="button"
                     variant={editor.isActive("heading", { level: 3 }) ? "default" : "secondary"}
@@ -138,6 +164,7 @@ export const NewsletterRichEditor = ({ value, onChange, placeholder, className }
                 >
                     Bullets
                 </Button>
+
                 <Button
                     type="button"
                     variant={editor.isActive("orderedList") ? "default" : "secondary"}
@@ -169,6 +196,36 @@ export const NewsletterRichEditor = ({ value, onChange, placeholder, className }
                     </Button>
                 </div>
 
+                <Separator orientation="vertical" className="mx-1 h-8" />
+
+                <UploadButton
+                    endpoint="newsletterImage"
+                    appearance={{
+                        button: "h-9 rounded-md px-3 text-sm font-medium",
+                    }}
+                    content={{
+                        button() {
+                            return "Upload image";
+                        },
+                    }}
+                    onClientUploadComplete={(files: any) => {
+                        const file = files[0];
+                        if (!file?.ufsUrl) return;
+
+                        editor
+                            .chain()
+                            .focus()
+                            .setImage({
+                                src: file.ufsUrl,
+                                alt: file.name ?? "Newsletter image",
+                            })
+                            .run();
+                    }}
+                    onUploadError={(error: Error) => {
+                        console.error(error);
+                    }}
+                />
+
                 <div className="ml-auto flex items-center gap-1">
                     <Button
                         type="button"
@@ -193,8 +250,7 @@ export const NewsletterRichEditor = ({ value, onChange, placeholder, className }
 
             <Separator />
 
-            {/* Editor surface */}
             <EditorContent editor={editor} />
         </div>
-    )
-}
+    );
+};

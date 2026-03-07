@@ -5,22 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1772725924277,
-      "tag": "0000_nostalgic_rick_jones",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1772751464717,
-      "tag": "0001_mean_santa_claus",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1772771245238,
-      "tag": "0002_unusual_harry_osborn",
+      "when": 1772773521277,
+      "tag": "0000_opposite_nekra",
       "breakpoints": true
     }
   ]

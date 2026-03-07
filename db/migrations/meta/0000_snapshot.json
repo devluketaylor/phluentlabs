@@ -1,5 +1,5 @@
 {
-  "id": "a758a77a-e7d3-42c7-a435-30f410d32132",
+  "id": "42f7016f-34bd-47e6-b79e-7ba5869ff987",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -437,6 +437,12 @@
           "primaryKey": true,
           "notNull": true
         },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "subject": {
           "name": "subject",
           "type": "text",
@@ -498,7 +504,15 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "newsletters_slug_unique": {
+          "name": "newsletters_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "slug"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -553,6 +567,12 @@
         },
         "unsubscribed_at": {
           "name": "unsubscribed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
