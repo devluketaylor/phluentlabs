@@ -174,6 +174,47 @@ export const adminNewsletterRouter = router({
 const PAGE_SIZE = 6;
 
 export const newsletterRouter = router({
+      createDraftViaApiKey: publicProcedure
+    .input(
+      z.object({
+        subject: z.string().min(1),
+        html: z.string().min(1),
+        preheader: z.string().optional(),
+        slug: z.string().optional(),
+        apiKey: z.string().min(1),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      // --- auth: shared secret, not admin session ---
+      if (
+        !process.env.NEWSLETTER_API_KEY ||
+        input.apiKey !== process.env.NEWSLETTER_API_KEY
+              ) {
+        throw new TRPCError({ code: "UNAUTHORIZED" });
+      }
+
+      // --- slug: same behavior as your admin `create` ---
+      const id = crypto.randomUUID();
+      const baseSlug = input.slug?.trim()
+        ? toSlug(input.slug.trim())
+        : toSlug(input.subject.trim());
+      const slug = baseSlug ? `${baseSlug}-${id.slice(0, 8)}` : id.slice(0, 8);
+
+      // --- insert as DRAFT (never auto-publish) ---
+      await ctx.db.insert(newsletters).values({
+        id,
+        slug,
+                subject: input.subject.trim(),
+        html: input.html,
+        preheader: input.preheader ?? null,
+        status: "draft",
+        // If `createdBy` is NULLABLE: delete the next line.
+        // If it's a required FK: set NEWSLETTER_BOT_USER_ID to a real user row id.
+        createdBy: process.env.NEWSLETTER_BOT_USER_ID ?? "newsletter-bot",
+      });
+
+      return { ok: true, id, slug, url: `/issues/${slug}` };
+    }),
     list: publicProcedure
         .input(z.object({ page: z.number().int().min(1).default(1) }))
         .query(async ({ input, ctx }) => {
