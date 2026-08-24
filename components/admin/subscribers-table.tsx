@@ -7,6 +7,7 @@ import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/c
 import {Input} from "@/components/ui/input";
 import {Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger} from "@/components/ui/dialog";
 import {Card} from "@/components/ui/card";
+import {toast} from "sonner";
 
 type Status = "pending" | "subscribed" | "unsubscribed";
 
@@ -25,13 +26,17 @@ export const SubscribersTable = () => {
     const update = trpc.adminSubscribers.update.useMutation({
         onSuccess: async () => {
             await utils.adminSubscribers.list.invalidate();
-        }
+            toast.success("Subscriber updated");
+        },
+        onError: (err) => toast.error(err.message || "Failed to update subscriber"),
     })
 
     const del = trpc.adminSubscribers.delete.useMutation({
         onSuccess: async () => {
             await utils.adminSubscribers.list.invalidate();
-        }
+            toast.success("Subscriber deleted");
+        },
+        onError: (err) => toast.error(err.message || "Failed to delete subscriber"),
     })
 
         return (
