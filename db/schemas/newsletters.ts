@@ -6,6 +6,10 @@ export const newsletters = pgTable("newsletters", {
     subject: text("subject").notNull(),
     preheader: text("preheader"),
     html: text("html").notNull(),
+    // SEO fields (optional): let the search title/description differ from the
+    // email subject/preheader. Fall back to subject/preheader when null.
+    seoTitle: text("seo_title"),
+    metaDescription: text("meta_description"),
     status: text("status").notNull().default("draft"),
     scheduledAt: timestamp("scheduled_at"),
     sentAt: timestamp("sent_at"),

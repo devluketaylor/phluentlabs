@@ -34,20 +34,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
     if (!issue) return {};
 
-    const description = issue.preheader ?? issue.subject;
+    // Prefer explicit SEO fields when set, else fall back to email subject/preheader.
+    const seoTitle = issue.seoTitle ?? issue.subject;
+    const description = issue.metaDescription ?? issue.preheader ?? issue.subject;
     const canonical = `${APP_URL}/issues/${issue.slug}`;
     const published = (issue.sentAt ?? issue.createdAt)?.toISOString();
     const modified = (issue.updatedAt ?? issue.sentAt ?? issue.createdAt)?.toISOString();
 
     return {
-        title: issue.subject,
+        title: seoTitle,
         description,
         alternates: {
             canonical,
         },
         openGraph: {
             type: "article",
-            title: issue.subject,
+            title: seoTitle,
             description,
             url: canonical,
             siteName: "PhluentLabs",
@@ -57,7 +59,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         },
         twitter: {
             card: "summary_large_image",
-            title: issue.subject,
+            title: seoTitle,
             description,
             creator: TWITTER_HANDLE,
         },

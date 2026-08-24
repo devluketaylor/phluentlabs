@@ -37,6 +37,13 @@ export const metadata: Metadata = {
     title: "PhluentLabs",
     description:
       "What I'm noticing while building the web — straight to your inbox. A weekly newsletter for developers.",
+    creator: "@luketaylordev",
+  },
+  alternates: {
+    canonical: APP_URL,
+    types: {
+      "application/rss+xml": `${APP_URL}/feed.xml`,
+    },
   },
 };
 
