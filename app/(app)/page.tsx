@@ -132,15 +132,26 @@ export default function HomePage() {
                 <p className="text-muted-foreground text-lg max-w-md mx-auto leading-relaxed">
                     What I'm noticing while building the web. — straight to your inbox.
                 </p>
-                <p className="text-sm text-muted-foreground">
-                    Join{" "}
-                    <span className="font-semibold text-foreground">
-                        {subscriberCount.data && subscriberCount.data.count >= 10
-                            ? `${subscriberCount.data.count}+`
-                            : "the"}
-                    </span>{" "}
-                    developers already subscribed.
-                </p>
+                {(() => {
+                    const n = subscriberCount.data?.count ?? 0;
+                    // Show a real number once there's at least one subscriber.
+                    // Round down to a "NN+" figure past 50 so it reads as social proof.
+                    if (n <= 0) {
+                        return (
+                            <p className="text-sm text-muted-foreground">
+                                Be one of the first developers to subscribe.
+                            </p>
+                        );
+                    }
+                    const label = n >= 50 ? `${Math.floor(n / 10) * 10}+` : `${n}`;
+                    return (
+                        <p className="text-sm text-muted-foreground">
+                            Join{" "}
+                            <span className="font-semibold text-foreground">{label}</span>{" "}
+                            developer{n === 1 ? "" : "s"} already subscribed.
+                        </p>
+                    );
+                })()}
             </section>
 
             {/* Subscribe form */}
