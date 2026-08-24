@@ -55,6 +55,8 @@ export function NewslettersTable() {
         onSuccess: () => utils.adminNewsletter.list.invalidate(),
     });
 
+    const sendTest = trpc.adminNewsletter.sendTest.useMutation();
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -93,6 +95,11 @@ export function NewslettersTable() {
                             })}
                         </div>
                         <div className="col-span-3 flex justify-end gap-1">
+                            <PreviewNewsletterDialog newsletter={n} />
+                            <TestSendDialog
+                                newsletter={n}
+                                onSendTest={(to) => sendTest.mutateAsync({ id: n.id, to })}
+                            />
                             <EditNewsletterDialog
                                 newsletter={n}
                                 onSave={(data) => update.mutate(data)}
@@ -135,6 +142,100 @@ export function NewslettersTable() {
                 )}
             </Card>
         </div>
+    );
+}
+
+function PreviewNewsletterDialog({
+    newsletter,
+}: {
+    newsletter: { subject: string; preheader: string | null; html: string };
+}) {
+    const [open, setOpen] = useState(false);
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm" variant="outline">Preview</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+                <DialogHeader>
+                    <DialogTitle className="truncate">{newsletter.subject}</DialogTitle>
+                    {newsletter.preheader && (
+                        <p className="text-sm text-muted-foreground">{newsletter.preheader}</p>
+                    )}
+                </DialogHeader>
+                <div className="overflow-y-auto rounded-md border bg-background p-6">
+                    <div
+                        className="prose prose-sm dark:prose-invert max-w-none"
+                        dangerouslySetInnerHTML={{ __html: newsletter.html }}
+                    />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                    This is how the issue renders on the web. Use “Test send” to check it in an email client.
+                </p>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function TestSendDialog({
+    newsletter,
+    onSendTest,
+}: {
+    newsletter: { subject: string };
+    onSendTest: (to: string) => Promise<unknown>;
+}) {
+    const [open, setOpen] = useState(false);
+    const [to, setTo] = useState("");
+    const [sending, setSending] = useState(false);
+    const [result, setResult] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleSend = async () => {
+        setSending(true);
+        setError(null);
+        setResult(null);
+        try {
+            await onSendTest(to);
+            setResult(`Test sent to ${to}`);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Failed to send test");
+        } finally {
+            setSending(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm" variant="outline">Test send</Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Send a test copy</DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-muted-foreground">
+                    Send a single test of{" "}
+                    <span className="font-medium text-foreground">&ldquo;{newsletter.subject}&rdquo;</span>{" "}
+                    to an address you choose. Subscribers are not affected.
+                </p>
+                <Input
+                    type="email"
+                    placeholder="you@example.com"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                />
+                {result && <p className="text-sm text-green-600 dark:text-green-400">{result}</p>}
+                {error && <p className="text-sm text-destructive">{error}</p>}
+                <DialogFooter>
+                    <Button variant="secondary" onClick={() => setOpen(false)} disabled={sending}>
+                        Close
+                    </Button>
+                    <Button disabled={sending || !to.includes("@")} onClick={handleSend}>
+                        {sending ? "Sending…" : "Send test"}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 

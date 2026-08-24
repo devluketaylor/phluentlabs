@@ -169,6 +169,40 @@ export const adminNewsletterRouter = router({
 
             return { ok: true, sent: allSubscribers.length };
         }),
+
+    // Send a single test copy to a chosen address (e.g. yourself) so you can
+    // proof formatting/dark-mode before the real blast. Does NOT mark as sent,
+    // does NOT touch subscribers, and includes a clear [TEST] subject prefix.
+    sendTest: adminProcedure
+        .input(
+            z.object({
+                id: z.string().min(1),
+                to: z.string().email(),
+            })
+        )
+        .mutation(async ({ input, ctx }) => {
+            const [newsletter] = await ctx.db
+                .select()
+                .from(newsletters)
+                .where(eq(newsletters.id, input.id));
+
+            if (!newsletter) throw new TRPCError({ code: "NOT_FOUND", message: "Newsletter not found" });
+
+            const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
+
+            // Mirror the real send's footer so the test matches production output,
+            // but with a dummy unsubscribe link (no real token needed for a test).
+            const html = `<div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:6px;padding:10px 14px;margin-bottom:20px;font-size:13px;color:#92400e;">This is a <strong>test</strong> of your newsletter. Subscribers will not see this banner.</div>${newsletter.html}<p style="margin-top:32px;font-size:12px;color:#888;"><a href="#">Unsubscribe</a></p>`;
+
+            await resend.emails.send({
+                from: fromEmail,
+                to: input.to,
+                subject: `[TEST] ${newsletter.subject}`,
+                html,
+            });
+
+            return { ok: true, to: input.to };
+        }),
 });
 
 const PAGE_SIZE = 6;
