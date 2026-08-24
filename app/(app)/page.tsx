@@ -97,6 +97,9 @@ function ConfirmStep() {
 export default function HomePage() {
     const router = useRouter();
     const subscribeRequest = trpc.subscribe.request.useMutation();
+    const subscriberCount = trpc.subscribe.count.useQuery(undefined, {
+        staleTime: 5 * 60 * 1000,
+    });
 
     const methods = useForm<SubscribeValues>({
         resolver: zodResolver(subscribeSchema),
@@ -124,13 +127,19 @@ export default function HomePage() {
                     <span className="bg-linear-to-tr from-primary to-red-500 bg-clip-text text-transparent">
                         Phluent
                     </span>
-                    <span className={"text-muted-foreg"}>Labs</span>
+                    <span className="text-muted-foreground">Labs</span>
                 </h1>
                 <p className="text-muted-foreground text-lg max-w-md mx-auto leading-relaxed">
                     What I'm noticing while building the web. — straight to your inbox.
                 </p>
                 <p className="text-sm text-muted-foreground">
-                    Join <span className="font-semibold text-foreground">100+</span> developers already subscribed.
+                    Join{" "}
+                    <span className="font-semibold text-foreground">
+                        {subscriberCount.data && subscriberCount.data.count >= 10
+                            ? `${subscriberCount.data.count}+`
+                            : "the"}
+                    </span>{" "}
+                    developers already subscribed.
                 </p>
             </section>
 
