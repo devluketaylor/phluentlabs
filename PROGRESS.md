@@ -47,6 +47,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ---
 
 ## Conventions (dev sub-agent MUST follow)
+> Full standing brief + read-lean rules live in `DEV_AGENT.md`. Read that first each run.
+
 - **Never auto-push to `main` or auto-deploy.** Commit locally; Tessie/Luke review + push. Exception: none.
 - **Never publish/send a real newsletter** or touch production data.
 - Work only in `projects/phluentlabs/`. Keep `.env`, `.devdb/`, `node_modules/` OUT of git (already ignored — verify).
