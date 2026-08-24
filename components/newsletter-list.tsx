@@ -44,12 +44,11 @@ export function NewsletterList() {
         return [1, "...", page - 1, page, page + 1, "...", totalPages];
     };
 
-    const filter = data.items.filter((item) => item.status === "sent")
-
+    // Server already returns only published ("sent") issues, so no client filter needed.
     return (
         <div className="space-y-6">
             <ul className="space-y-3">
-                {filter.map((issue) => (
+                {data.items.map((issue) => (
                     <li key={issue.id}>
                         <Link
                             href={`/issues/${issue.slug ?? issue.id}`}
@@ -66,7 +65,7 @@ export function NewsletterList() {
                                 )}
                             </div>
                             <span className="text-xs text-muted-foreground whitespace-nowrap pt-0.5 shrink-0">
-                                {new Date(issue.createdAt).toLocaleDateString(undefined, {
+                                {new Date(issue.sentAt ?? issue.createdAt).toLocaleDateString(undefined, {
                                     month: "short",
                                     day: "numeric",
                                     year: "numeric",

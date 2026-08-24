@@ -1,7 +1,7 @@
 import {publicProcedure, router} from "@/trpc/server";
 import {z} from "zod";
 import {subscribers} from "@/db/schemas/subscribers";
-import {eq} from "drizzle-orm";
+import {count, eq} from "drizzle-orm";
 import {signSubscriberToken, verifySubscriberToken} from "@/lib/subscriber-token";
 import {Resend} from "resend";
 
@@ -21,6 +21,19 @@ export const sendConfirmEmail = async (to: string, confirmUrl: string) => {
 }
 
 export const subscribeRouter = router({
+        // Public: live count of confirmed subscribers for social proof on the
+        // homepage. Only counts status = "subscribed" (not pending/unsubscribed).
+        count: publicProcedure.query(async ({ ctx }) => {
+            try {
+                const [{ total }] = await ctx.db
+                    .select({ total: count() })
+                    .from(subscribers)
+                    .where(eq(subscribers.status, "subscribed"));
+                return { count: total };
+            } catch {
+                return { count: 0 };
+            }
+        }),
         request: publicProcedure
             .input(
                 z.object({
