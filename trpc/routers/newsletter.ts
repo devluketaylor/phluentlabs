@@ -228,6 +228,8 @@ export const newsletterRouter = router({
         html: z.string().min(1),
         preheader: z.string().optional(),
         slug: z.string().optional(),
+        seoTitle: z.string().optional(),
+        metaDescription: z.string().optional(),
         apiKey: z.string().min(1),
       })
     )
@@ -254,6 +256,8 @@ export const newsletterRouter = router({
                 subject: input.subject.trim(),
         html: input.html,
         preheader: input.preheader ?? null,
+        seoTitle: input.seoTitle ?? null,
+        metaDescription: input.metaDescription ?? null,
         status: "draft",
         // If `createdBy` is NULLABLE: delete the next line.
         // If it's a required FK: set NEWSLETTER_BOT_USER_ID to a real user row id.
