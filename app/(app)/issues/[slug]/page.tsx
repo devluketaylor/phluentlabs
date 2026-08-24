@@ -5,6 +5,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
+import { IssueShare } from "@/components/issue-share";
+import { IssueSubscribeCta } from "@/components/issue-subscribe-cta";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -139,7 +141,11 @@ export default async function IssuePage({ params }: Props) {
                     className="prose prose-sm dark:prose-invert max-w-none"
                     dangerouslySetInnerHTML={{ __html: issue.html }}
                 />
+
+                <IssueShare url={canonical} title={issue.subject} />
             </article>
+
+            <IssueSubscribeCta />
         </div>
     );
 }
