@@ -12,10 +12,11 @@ function toSlug(text: string): string {
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, lte } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { TRPCError } from "@trpc/server";
+import { sendNewsletterToSubscribers } from "@/lib/send-newsletter";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -106,6 +107,25 @@ export const adminNewsletterRouter = router({
 
     send: adminProcedure
         .input(z.object({ id: z.string().min(1) }))
+        .mutation(async ({ input }) => {
+            try {
+                const { sent } = await sendNewsletterToSubscribers(input.id);
+                return { ok: true, sent };
+            } catch (e) {
+                const msg = e instanceof Error ? e.message : "Send failed";
+                throw new TRPCError({ code: "BAD_REQUEST", message: msg });
+            }
+        }),
+
+    // Schedule (or reschedule) a newsletter to send at a future time. A cron
+    // job hits sendScheduledDue() to fire due sends. Pass null to unschedule.
+    schedule: adminProcedure
+        .input(
+            z.object({
+                id: z.string().min(1),
+                scheduledAt: z.string().datetime().nullable(),
+            })
+        )
         .mutation(async ({ input, ctx }) => {
             const [newsletter] = await ctx.db
                 .select()
@@ -115,59 +135,52 @@ export const adminNewsletterRouter = router({
             if (!newsletter) throw new TRPCError({ code: "NOT_FOUND", message: "Newsletter not found" });
             if (newsletter.status === "sent") throw new TRPCError({ code: "BAD_REQUEST", message: "Newsletter already sent" });
 
-            const allSubscribers = await ctx.db
-                .select({ id: subscribers.id, email: subscribers.email })
-                .from(subscribers)
-                .where(eq(subscribers.status, "subscribed"));
+            if (input.scheduledAt === null) {
+                // Unschedule -> back to draft.
+                await ctx.db
+                    .update(newsletters)
+                    .set({ status: "draft", scheduledAt: null, updatedAt: new Date() })
+                    .where(eq(newsletters.id, input.id));
+                return { ok: true, scheduled: false };
+            }
 
-            if (allSubscribers.length === 0) return { ok: true, sent: 0 };
-
-            const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
-
-            // Send in batches of 100 (Resend limit)
-            const BATCH_SIZE = 100;
-            for (let i = 0; i < allSubscribers.length; i += BATCH_SIZE) {
-                const batch = allSubscribers.slice(i, i + BATCH_SIZE);
-
-                const emails = await Promise.all(
-                    batch.map(async (sub) => {
-                        const unsubToken = await signSubscriberToken({ subId: sub.id, email: sub.email, scope: "unsub" });
-                        const unsubUrl = new URL("/unsubscribe", appUrl);
-                        unsubUrl.searchParams.set("token", unsubToken);
-
-                        const html = `${newsletter.html}<p style="margin-top:32px;font-size:12px;color:#888;">
-                            <a href="${unsubUrl.toString()}">Unsubscribe</a>
-                        </p>`;
-
-                        return {
-                            from: fromEmail,
-                            to: sub.email,
-                            subject: newsletter.subject,
-                            html,
-                        };
-                    })
-                );
-
-                await resend.batch.send(emails);
-
-                await ctx.db.insert(newsletterRecipients).values(
-                    batch.map((sub) => ({
-                        id: crypto.randomUUID(),
-                        newsletterId: newsletter.id,
-                        subscriberId: sub.id,
-                        status: "sent",
-                        sentAt: new Date(),
-                    }))
-                ).onConflictDoNothing();
+            const when = new Date(input.scheduledAt);
+            if (when.getTime() <= Date.now()) {
+                throw new TRPCError({ code: "BAD_REQUEST", message: "Scheduled time must be in the future" });
             }
 
             await ctx.db
                 .update(newsletters)
-                .set({ status: "sent", sentAt: new Date(), updatedAt: new Date() })
+                .set({ status: "scheduled", scheduledAt: when, updatedAt: new Date() })
                 .where(eq(newsletters.id, input.id));
+            return { ok: true, scheduled: true, scheduledAt: when.toISOString() };
+        }),
 
-            return { ok: true, sent: allSubscribers.length };
+    // API-key-protected: send all scheduled newsletters whose time has passed.
+    // Call this from a cron job (e.g. Vercel Cron) every few minutes.
+    sendScheduledDue: publicProcedure
+        .input(z.object({ apiKey: z.string().min(1) }))
+        .mutation(async ({ input, ctx }) => {
+            if (!process.env.NEWSLETTER_API_KEY || input.apiKey !== process.env.NEWSLETTER_API_KEY) {
+                throw new TRPCError({ code: "UNAUTHORIZED" });
+            }
+
+            const due = await ctx.db
+                .select({ id: newsletters.id })
+                .from(newsletters)
+                .where(and(eq(newsletters.status, "scheduled"), lte(newsletters.scheduledAt, new Date())));
+
+            const results: Array<{ id: string; sent: number; error?: string }> = [];
+            for (const n of due) {
+                try {
+                    const { sent } = await sendNewsletterToSubscribers(n.id);
+                    results.push({ id: n.id, sent });
+                } catch (e) {
+                    results.push({ id: n.id, sent: 0, error: e instanceof Error ? e.message : "failed" });
+                }
+            }
+
+            return { ok: true, processed: results.length, results };
         }),
 
     // Send a single test copy to a chosen address (e.g. yourself) so you can

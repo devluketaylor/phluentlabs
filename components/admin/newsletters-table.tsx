@@ -57,6 +57,10 @@ export function NewslettersTable() {
 
     const sendTest = trpc.adminNewsletter.sendTest.useMutation();
 
+    const schedule = trpc.adminNewsletter.schedule.useMutation({
+        onSuccess: () => utils.adminNewsletter.list.invalidate(),
+    });
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -106,6 +110,14 @@ export function NewslettersTable() {
                                 saving={update.isPending}
                             />
                             {n.status !== "sent" && (
+                                <ScheduleDialog
+                                    newsletter={n}
+                                    onSchedule={(scheduledAt) =>
+                                        schedule.mutateAsync({ id: n.id, scheduledAt })
+                                    }
+                                />
+                            )}
+                            {n.status !== "sent" && (
                                 <SendNewsletterDialog
                                     newsletter={n}
                                     onSend={() => send.mutate({ id: n.id })}
@@ -142,6 +154,71 @@ export function NewslettersTable() {
                 )}
             </Card>
         </div>
+    );
+}
+
+function ScheduleDialog({
+    newsletter,
+    onSchedule,
+}: {
+    newsletter: { subject: string; status: string; scheduledAt?: Date | string | null };
+    onSchedule: (scheduledAt: string | null) => Promise<unknown>;
+}) {
+    const [open, setOpen] = useState(false);
+    const [value, setValue] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const isScheduled = newsletter.status === "scheduled";
+
+    const submit = async (clear: boolean) => {
+        setBusy(true);
+        setError(null);
+        try {
+            // datetime-local gives local wall-clock; convert to ISO for the server.
+            await onSchedule(clear ? null : new Date(value).toISOString());
+            setOpen(false);
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Failed to schedule");
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm" variant="outline">
+                    {isScheduled ? "Reschedule" : "Schedule"}
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Schedule send</DialogTitle>
+                </DialogHeader>
+                <p className="text-sm text-muted-foreground">
+                    Pick when{" "}
+                    <span className="font-medium text-foreground">&ldquo;{newsletter.subject}&rdquo;</span>{" "}
+                    should go out to all subscribers.
+                </p>
+                <Input
+                    type="datetime-local"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                />
+                {error && <p className="text-sm text-destructive">{error}</p>}
+                <DialogFooter className="gap-2">
+                    {isScheduled && (
+                        <Button variant="secondary" onClick={() => submit(true)} disabled={busy}>
+                            Unschedule
+                        </Button>
+                    )}
+                    <Button onClick={() => submit(false)} disabled={busy || !value}>
+                        {busy ? "Saving…" : "Schedule"}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 
