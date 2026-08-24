@@ -9,6 +9,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ## Now (active focus)
 - [~] Tier 1: Subscribers admin upgrades
 
+## Workflow
+- **Dev loop:** cron `phluentlabs-dev-loop` runs 3x/day (8am, 2pm, 8pm CDT). Each run does ONE board item, commits locally, updates this board, posts a summary to Discord.
+- **Code review:** Tessie reviews each dev-loop commit before Luke pushes to main. (Future: dedicated code-review sub-agent once volume justifies it — reviews diffs, checks conventions/tsc, flags issues, then Tessie/Luke approve + push.)
+- **Push/deploy:** always Luke's explicit green light. Dev loop NEVER pushes or deploys.
+
 ## Tiers (roadmap)
 
 ### Tier 1 — Fix + foundational polish
