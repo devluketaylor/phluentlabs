@@ -104,6 +104,10 @@ export default async function IssuePage({ params }: Props) {
     const published = (issue.sentAt ?? issue.createdAt)?.toISOString();
     const modified = (issue.updatedAt ?? issue.sentAt ?? issue.createdAt)?.toISOString();
 
+    // Reading time: strip HTML tags, count words, ~220 wpm.
+    const wordCount = issue.html.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+    const readingMinutes = Math.max(1, Math.round(wordCount / 220));
+
     // JSON-LD structured data — helps search engines understand this is an
     // article with an author and publish date, which can enable richer results.
     const jsonLd = {
@@ -146,12 +150,12 @@ export default async function IssuePage({ params }: Props) {
             </Link>
 
             <article>
-                <header className="mb-8 space-y-2">
-                    <h1 className="text-2xl font-bold">{issue.subject}</h1>
+                <header className="mb-8 space-y-3">
+                    <h1 className="text-3xl font-bold tracking-tight leading-tight">{issue.subject}</h1>
                     {issue.preheader && (
-                        <p className="text-muted-foreground">{issue.preheader}</p>
+                        <p className="text-lg text-muted-foreground leading-relaxed">{issue.preheader}</p>
                     )}
-                    <p className="text-sm text-muted-foreground">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <time dateTime={published}>
                             {new Date(issue.sentAt ?? issue.createdAt).toLocaleDateString(undefined, {
                                 year: "numeric",
@@ -159,11 +163,13 @@ export default async function IssuePage({ params }: Props) {
                                 day: "numeric",
                             })}
                         </time>
-                    </p>
+                        <span aria-hidden>·</span>
+                        <span>{readingMinutes} min read</span>
+                    </div>
                 </header>
 
                 <div
-                    className="prose prose-sm dark:prose-invert max-w-none"
+                    className="prose prose-base dark:prose-invert max-w-none prose-headings:tracking-tight prose-headings:font-semibold prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-img:rounded-xl prose-hr:border-border"
                     dangerouslySetInnerHTML={{ __html: issue.html }}
                 />
 
