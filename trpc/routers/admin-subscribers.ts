@@ -39,6 +39,42 @@ export const adminSubscribersRouter = router({
 
             return rows;
         }),
+    create: adminProcedure
+        .input(
+            z.object({
+                email: z.string().email(),
+                firstName: z.string().nullable().optional(),
+                lastName: z.string().nullable().optional(),
+                status: z.enum(["pending", "subscribed", "unsubscribed"]).default("subscribed"),
+            })
+        )
+        .mutation(async ({ input, ctx }) => {
+            const email = input.email.trim().toLowerCase();
+
+            const [existing] = await ctx.db
+                .select()
+                .from(subscribers)
+                .where(eq(subscribers.email, email));
+
+            if (existing) {
+                throw new Error("A subscriber with that email already exists.");
+            }
+
+            const id = crypto.randomUUID();
+            const now = new Date();
+
+            await ctx.db.insert(subscribers).values({
+                id,
+                email,
+                firstName: input.firstName?.trim() || null,
+                lastName: input.lastName?.trim() || null,
+                status: input.status,
+                confirmedAt: input.status === "subscribed" ? now : null,
+                unsubscribedAt: input.status === "unsubscribed" ? now : null,
+            });
+
+            return { ok: true, id };
+        }),
     update: adminProcedure
         .input(
             z.object({

@@ -23,6 +23,14 @@ export const SubscribersTable = () => {
         offset: 0
     });
 
+    const create = trpc.adminSubscribers.create.useMutation({
+        onSuccess: async () => {
+            await utils.adminSubscribers.list.invalidate();
+            toast.success("Subscriber added");
+        },
+        onError: (err) => toast.error(err.message || "Failed to add subscriber"),
+    })
+
     const update = trpc.adminSubscribers.update.useMutation({
         onSuccess: async () => {
             await utils.adminSubscribers.list.invalidate();
@@ -63,9 +71,15 @@ export const SubscribersTable = () => {
 </Select>
 </div>
 
-    <Button variant="secondary" onClick={() => list.refetch()} disabled={list.isFetching}>
-        {list.isFetching ? "Refreshing…" : "Refresh"}
-    </Button>
+    <div className="flex items-center gap-2">
+        <AddSubscriberDialog
+            onSave={(next) => create.mutate(next)}
+            saving={create.isPending}
+        />
+        <Button variant="secondary" onClick={() => list.refetch()} disabled={list.isFetching}>
+            {list.isFetching ? "Refreshing…" : "Refresh"}
+        </Button>
+    </div>
 </div>
 
     <Card className="overflow-hidden">
@@ -115,6 +129,98 @@ export const SubscribersTable = () => {
     </Card>
 </div>
         )
+}
+
+function AddSubscriberDialog({
+                                 onSave,
+                                 saving,
+                             }: {
+    onSave: (input: { email: string; firstName: string | null; lastName: string | null; status: Status }) => void;
+    saving: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+
+    const [email, setEmail] = useState("");
+    const [firstName, setFirstName] = useState("");
+    const [lastName, setLastName] = useState("");
+    const [status, setStatus] = useState<Status>("subscribed");
+
+    useEffect(() => {
+        if (open) return;
+        setEmail("");
+        setFirstName("");
+        setLastName("");
+        setStatus("subscribed");
+    }, [open]);
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm">Add subscriber</Button>
+            </DialogTrigger>
+
+            <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle>Add subscriber</DialogTitle>
+                </DialogHeader>
+
+                <div className="space-y-3">
+                    <div className="space-y-2">
+                        <div className="text-sm font-medium">Email</div>
+                        <Input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="name@example.com"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                            <div className="text-sm font-medium">First name</div>
+                            <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                            <div className="text-sm font-medium">Last name</div>
+                            <Input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <div className="text-sm font-medium">Status</div>
+                        <Select value={status} onValueChange={(v) => setStatus(v as Status)}>
+                            <SelectTrigger>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="subscribed">Subscribed</SelectItem>
+                                <SelectItem value="unsubscribed">Unsubscribed</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+                        <Button
+                            onClick={() => {
+                                onSave({
+                                    email: email.trim(),
+                                    firstName: firstName.trim() ? firstName.trim() : null,
+                                    lastName: lastName.trim() ? lastName.trim() : null,
+                                    status,
+                                });
+                                setOpen(false);
+                            }}
+                            disabled={saving || !email.trim()}
+                        >
+                            Add
+                        </Button>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
 }
 
 function EditSubscriberDialog({
