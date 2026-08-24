@@ -1,9 +1,9 @@
 import { db } from "@/db/client";
 import { newsletters } from "@/db/schemas/newsletters";
-import { and, eq, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, or } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import { IssueShare } from "@/components/issue-share";
 import { IssueSubscribeCta } from "@/components/issue-subscribe-cta";
@@ -28,6 +28,31 @@ async function getIssue(slug: string) {
             ),
         );
     return issue ?? null;
+}
+
+// Previous = the published issue sent just BEFORE this one; next = just AFTER.
+// Falls back to createdAt when sentAt is missing on older rows.
+async function getAdjacentIssues(current: { sentAt: Date | null; createdAt: Date }) {
+    const anchor = current.sentAt ?? current.createdAt;
+    try {
+        const [prev] = await db
+            .select({ slug: newsletters.slug, subject: newsletters.subject })
+            .from(newsletters)
+            .where(and(eq(newsletters.status, "sent"), lt(newsletters.sentAt, anchor)))
+            .orderBy(desc(newsletters.sentAt))
+            .limit(1);
+
+        const [next] = await db
+            .select({ slug: newsletters.slug, subject: newsletters.subject })
+            .from(newsletters)
+            .where(and(eq(newsletters.status, "sent"), gt(newsletters.sentAt, anchor)))
+            .orderBy(asc(newsletters.sentAt))
+            .limit(1);
+
+        return { prev: prev ?? null, next: next ?? null };
+    } catch {
+        return { prev: null, next: null };
+    }
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -145,7 +170,55 @@ export default async function IssuePage({ params }: Props) {
                 <IssueShare url={canonical} title={issue.subject} />
             </article>
 
+            <IssueNav slug={issue.slug} sentAt={issue.sentAt} createdAt={issue.createdAt} />
+
             <IssueSubscribeCta />
         </div>
+    );
+}
+
+async function IssueNav({
+    sentAt,
+    createdAt,
+}: {
+    slug: string | null;
+    sentAt: Date | null;
+    createdAt: Date;
+}) {
+    const { prev, next } = await getAdjacentIssues({ sentAt, createdAt });
+    if (!prev && !next) return null;
+
+    return (
+        <nav className="mt-12 grid grid-cols-1 gap-3 border-t pt-8 sm:grid-cols-2">
+            {prev ? (
+                <Link
+                    href={`/issues/${prev.slug}`}
+                    className="group flex flex-col gap-1 rounded-xl border p-4 transition-colors hover:bg-muted/50 sm:text-left"
+                >
+                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <ArrowLeft className="h-3.5 w-3.5" /> Previous issue
+                    </span>
+                    <span className="text-sm font-medium group-hover:text-primary transition-colors line-clamp-2">
+                        {prev.subject}
+                    </span>
+                </Link>
+            ) : (
+                <span aria-hidden className="hidden sm:block" />
+            )}
+
+            {next && (
+                <Link
+                    href={`/issues/${next.slug}`}
+                    className="group flex flex-col gap-1 rounded-xl border p-4 transition-colors hover:bg-muted/50 sm:items-end sm:text-right"
+                >
+                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                        Next issue <ArrowRight className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="text-sm font-medium group-hover:text-primary transition-colors line-clamp-2">
+                        {next.subject}
+                    </span>
+                </Link>
+            )}
+        </nav>
     );
 }
