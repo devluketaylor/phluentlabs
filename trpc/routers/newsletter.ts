@@ -220,6 +220,9 @@ export const newsletterRouter = router({
         .query(async ({ input, ctx }) => {
             const offset = (input.page - 1) * PAGE_SIZE;
 
+            // Public endpoint: only ever return PUBLISHED issues. Filtering here
+            // (server-side) means draft content never reaches the browser at all,
+            // instead of being sent down and hidden in the UI.
             const [items, [{ total }]] = await Promise.all([
                 ctx.db
                     .select({
@@ -228,13 +231,18 @@ export const newsletterRouter = router({
                         subject: newsletters.subject,
                         preheader: newsletters.preheader,
                         createdAt: newsletters.createdAt,
+                        sentAt: newsletters.sentAt,
                         status: newsletters.status,
                     })
                     .from(newsletters)
-                    .orderBy(desc(newsletters.createdAt))
+                    .where(eq(newsletters.status, "sent"))
+                    .orderBy(desc(newsletters.sentAt), desc(newsletters.createdAt))
                     .limit(PAGE_SIZE)
                     .offset(offset),
-                ctx.db.select({ total: count() }).from(newsletters),
+                ctx.db
+                    .select({ total: count() })
+                    .from(newsletters)
+                    .where(eq(newsletters.status, "sent")),
             ]);
 
             return { items, total, pageSize: PAGE_SIZE };
