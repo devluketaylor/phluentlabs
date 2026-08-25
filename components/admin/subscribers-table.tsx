@@ -15,13 +15,26 @@ export const SubscribersTable = () => {
     const utils = trpc.useUtils();
     const [q, setQ] = useState("")
     const [status, setStatus] = useState<Status | "all">("all");
+    const [page, setPage] = useState(0);
+    const pageSize = 25;
+
+    // Reset to first page whenever the filters change.
+    useEffect(() => {
+        setPage(0);
+    }, [q, status]);
 
     const list = trpc.adminSubscribers.list.useQuery({
         q: q.trim() || undefined,
         status: status === "all" ? undefined : status,
-        limit: 100,
-        offset: 0
-    });
+        limit: pageSize,
+        offset: page * pageSize,
+    }, { placeholderData: (prev) => prev });
+
+    const total = list.data?.total ?? 0;
+    const rows = list.data?.rows ?? [];
+    const pageCount = Math.max(1, Math.ceil(total / pageSize));
+    const rangeStart = total === 0 ? 0 : page * pageSize + 1;
+    const rangeEnd = Math.min(total, page * pageSize + rows.length);
 
     const create = trpc.adminSubscribers.create.useMutation({
         onSuccess: async () => {
@@ -134,7 +147,7 @@ export const SubscribersTable = () => {
             <div className="col-span-1 text-right">Actions</div>
         </div>
 
-        {list.data?.map((s) => (
+        {rows.map((s) => (
             <div key={s.id} className="grid grid-cols-12 gap-2 px-3 py-2 items-center border-b">
                 <div className="col-span-5 truncate text-sm">{s.email}</div>
                 <div className="col-span-2 truncate text-sm text-muted-foreground">{s.firstName ?? "—"}</div>
@@ -158,7 +171,7 @@ export const SubscribersTable = () => {
             </div>
         ))}
 
-        {!list.isLoading && (list.data?.length ?? 0) === 0 && (
+        {!list.isLoading && rows.length === 0 && (
             <div className="p-10 text-center text-sm text-muted-foreground">No subscribers found.</div>
         )}
 
@@ -170,6 +183,35 @@ export const SubscribersTable = () => {
             <div className="p-4 text-sm text-destructive">{list.error.message}</div>
         )}
     </Card>
+
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm text-muted-foreground">
+            {total === 0
+                ? "No subscribers"
+                : `Showing ${rangeStart}–${rangeEnd} of ${total} subscriber${total === 1 ? "" : "s"}`}
+        </div>
+        <div className="flex items-center gap-2">
+            <div className="text-sm text-muted-foreground">
+                Page {page + 1} of {pageCount}
+            </div>
+            <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 0 || list.isFetching}
+            >
+                Previous
+            </Button>
+            <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                disabled={page >= pageCount - 1 || list.isFetching}
+            >
+                Next
+            </Button>
+        </div>
+    </div>
 </div>
         )
 }

@@ -1,6 +1,6 @@
 import {adminProcedure, router} from "@/trpc/server";
 import {string, z} from "zod";
-import {and, desc, eq, ilike, inArray, or} from "drizzle-orm";
+import {and, count, desc, eq, ilike, inArray, or} from "drizzle-orm";
 import {subscribers} from "@/db/schemas/subscribers";
 
 export const adminSubscribersRouter = router({
@@ -29,15 +29,21 @@ export const adminSubscribersRouter = router({
             }
 
             const where = parts.length ? and (...parts) : undefined;
-            const rows = await ctx.db
-                .select()
-                .from(subscribers)
-                .where(where)
-                .orderBy(desc(subscribers.createdAt))
-                .limit(input.limit)
-                .offset(input.offset);
+            const [rows, totalRow] = await Promise.all([
+                ctx.db
+                    .select()
+                    .from(subscribers)
+                    .where(where)
+                    .orderBy(desc(subscribers.createdAt))
+                    .limit(input.limit)
+                    .offset(input.offset),
+                ctx.db
+                    .select({ total: count() })
+                    .from(subscribers)
+                    .where(where),
+            ]);
 
-            return rows;
+            return { rows, total: totalRow[0]?.total ?? 0 };
         }),
     exportCsv: adminProcedure
         .input(
