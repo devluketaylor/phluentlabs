@@ -4,19 +4,22 @@ import {subscribers} from "@/db/schemas/subscribers";
 import {count, eq} from "drizzle-orm";
 import {signSubscriberToken, verifySubscriberToken} from "@/lib/subscriber-token";
 import {Resend} from "resend";
+import {renderConfirmEmail} from "@/lib/emails/confirm-email";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-export const sendConfirmEmail = async (to: string, confirmUrl: string) => {
+export const sendConfirmEmail = async (
+    to: string,
+    confirmUrl: string,
+    unsubscribeUrl?: string,
+) => {
+    const {subject, html, text} = renderConfirmEmail({confirmUrl, unsubscribeUrl});
     await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
         to,
-        subject: "Confirm your subscription",
-        html: `
-            <p>Thanks for subscribing! Please confirm your email address by clicking the link below.</p>
-            <p><a href="${confirmUrl}">Confirm subscription</a></p>
-            <p>If you didn't request this, you can safely ignore this email.</p>
-        `,
+        subject,
+        html,
+        text,
     });
 }
 
@@ -48,7 +51,6 @@ export const subscribeRouter = router({
                     .select()
                     .from(subscribers)
                     .where(eq(subscribers.email, email));
-                console.log(existing);
 
                 let id = existing?.id;
 
@@ -75,15 +77,17 @@ export const subscribeRouter = router({
                         .where(eq(subscribers.email, email));
                 }
 
-                const token = await signSubscriberToken({ subId: id!, email, scope: "confirm" })
+                const confirmToken = await signSubscriberToken({ subId: id!, email, scope: "confirm" })
                 const confirmUrl = new URL("/confirm", process.env.NEXT_PUBLIC_APP_URL!);
-                confirmUrl.searchParams.set("token", token);
+                confirmUrl.searchParams.set("token", confirmToken);
 
+                // Unsubscribe link must use the "unsub" scope (30d), not the
+                // confirm token — the /unsubscribe handler rejects non-"unsub".
+                const unsubToken = await signSubscriberToken({ subId: id!, email, scope: "unsub" })
                 const unsubscribeUrl = new URL("/unsubscribe", process.env.NEXT_PUBLIC_APP_URL!);
-                unsubscribeUrl.searchParams.set("token", token);
+                unsubscribeUrl.searchParams.set("token", unsubToken);
 
-                console.log(unsubscribeUrl);
-                await sendConfirmEmail(email, confirmUrl.toString());
+                await sendConfirmEmail(email, confirmUrl.toString(), unsubscribeUrl.toString());
 
                 return { ok: true, alreadySubscribed: false };
             }),
