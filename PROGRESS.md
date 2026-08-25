@@ -10,13 +10,16 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 - [~] Tier 1: Subscribers admin upgrades
 
 ## Workflow
-- **Dev loop:** cron `phluentlabs-dev-loop` runs 3x/day (8am, 2pm, 8pm CDT). Each run does ONE board item, commits locally, updates this board, posts a summary to Discord.
-- **Code review:** Tessie reviews each dev-loop commit before Luke pushes to main. (Future: dedicated code-review sub-agent once volume justifies it — reviews diffs, checks conventions/tsc, flags issues, then Tessie/Luke approve + push.)
-- **Push/deploy:** always Luke's explicit green light. Dev loop NEVER pushes or deploys.
+- **Dev loop:** cron `phluentlabs-dev-loop` runs every 3 hours (8x/day, around the clock, CDT). Each run does ONE board item, commits locally, updates this board, posts a summary to Discord.
+- **Code review + push:** Tessie reviews each dev-loop commit and, if it passes review (tsc clean, matches conventions, no raw Radix, dark-mode-safe, diff scoped to one item), **pushes to main automatically — no green light needed** (policy set by Luke 2026-08-25).
+  - **Tessie PAUSES and asks Luke before pushing** when a diff touches: DB schema/migrations, auth/better-auth/tokens/security, real email/newsletter sends or Resend production paths, `.env`/secrets, data deletions/destructive migrations, or is much larger than "one board item" / genuinely uncertain.
+- **Dev loop still NEVER pushes or deploys itself** — only Tessie pushes, after review. Deploys/real sends remain Luke's explicit call.
 
 ## Tiers (roadmap)
 
 ### Tier 1 — Fix + foundational polish
+- [ ] **BUG (high): Edit-subscriber Status dropdown does nothing** — In `components/admin/subscribers-table.tsx` `EditSubscriberDialog`, opening a subscriber's Edit dialog and clicking the Status `<Select>` doesn't work: the dropdown doesn't open / the Pending/Subscribed/Unsubscribed options don't appear, so status can't be changed. Code already uses the `@/components/ui/select` wrappers (not raw Radix) and the SelectItems exist, so this is subtler than the earlier `9c390e8` fix. Likely a Radix `Select`-inside-`Dialog` interaction: the Select content portal is being swallowed by the Dialog's focus trap / pointer-events, or a z-index/portal-container issue (Select popover rendering behind or outside the dialog overlay). Diagnose in-browser (check if SelectContent mounts in DOM at all). Likely fix: render Select content in the right portal container (e.g. pass the dialog content as the portal container, or set `modal` handling / `pointer-events` correctly), or ensure the ui Select wrapper's `SelectContent` has proper z-index above the dialog overlay. VERIFY: open Edit dialog, change status pending↔subscribed↔unsubscribed, save, confirm it persists (tRPC `update` + refetch). tsc clean.
+- [ ] **Mobile responsiveness pass (whole site + admin)** — Site "doesn't feel very responsive on mobile." Do a focused responsive audit and fix. Known trouble spots: the admin tables use raw 12-col grids (`grid-cols-12`) that don't reflow on narrow screens (subscribers + newsletters tables overflow / squish on phone widths); dialogs, the subscribe form, and homepage hero should be checked at 375px / 390px / 414px widths. Fixes: make admin table rows stack or horizontal-scroll gracefully on mobile, ensure tap targets are ≥44px, check padding/font-scaling, verify the public homepage + issue pages + subscribe form look good on a phone. Test in responsive devtools at common phone widths, light AND dark mode. Keep it incremental — can be split into sub-commits (admin tables first, then public pages) if too big for one run; if so, mark `[~]` and log progress. tsc clean.
 - [x] Fix subscribers edit Status dropdown (raw Radix SelectItem → ui wrapper) — pushed `9c390e8`
 - [x] Add-subscriber button + manual add form — local `fe38510`
 - [x] CSV import (upload) + export (download) for subscribers — local `a17c44b`
