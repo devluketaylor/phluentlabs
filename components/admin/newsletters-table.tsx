@@ -74,6 +74,8 @@ export function NewslettersTable() {
             </div>
 
             <Card className="overflow-hidden">
+              <div className="overflow-x-auto">
+                <div className="min-w-[860px]">
                 <div className="grid grid-cols-12 gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
                     <div className="col-span-3">Subject</div>
                     <div className="col-span-2">Preheader</div>
@@ -136,6 +138,8 @@ export function NewslettersTable() {
                         </div>
                     </div>
                 ))}
+                </div>
+              </div>
 
                 {!list.isLoading && (list.data?.items.length ?? 0) === 0 && (
                     <div className="p-10 text-center text-sm text-muted-foreground">

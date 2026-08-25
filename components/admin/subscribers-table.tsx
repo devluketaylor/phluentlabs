@@ -120,7 +120,7 @@ export const SubscribersTable = () => {
 </Select>
 </div>
 
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
         <AddSubscriberDialog
             onSave={(next) => create.mutate(next)}
             saving={create.isPending}
@@ -139,6 +139,8 @@ export const SubscribersTable = () => {
 </div>
 
     <Card className="overflow-hidden">
+      <div className="overflow-x-auto">
+        <div className="min-w-[720px]">
         <div className="grid grid-cols-12 gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
             <div className="col-span-5">Email</div>
             <div className="col-span-2">First</div>
@@ -170,6 +172,8 @@ export const SubscribersTable = () => {
                 </div>
             </div>
         ))}
+        </div>
+      </div>
 
         {!list.isLoading && rows.length === 0 && (
             <div className="p-10 text-center text-sm text-muted-foreground">No subscribers found.</div>
