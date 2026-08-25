@@ -1,7 +1,7 @@
 "use client"
 
 import {trpc} from "@/trpc/client";
-import {useEffect, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {Button} from "@/components/ui/button";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
 import {Input} from "@/components/ui/input";
@@ -47,6 +47,42 @@ export const SubscribersTable = () => {
         onError: (err) => toast.error(err.message || "Failed to delete subscriber"),
     })
 
+    const [exporting, setExporting] = useState(false);
+    const handleExport = async () => {
+        setExporting(true);
+        try {
+            const res = await utils.adminSubscribers.exportCsv.fetch({
+                q: q.trim() || undefined,
+                status: status === "all" ? undefined : status,
+            });
+            const blob = new Blob([res.csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            const stamp = new Date().toISOString().slice(0, 10);
+            a.download = `subscribers-${stamp}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            toast.success(`Exported ${res.count} subscriber${res.count === 1 ? "" : "s"}`);
+        } catch (err: any) {
+            toast.error(err?.message || "Export failed");
+        } finally {
+            setExporting(false);
+        }
+    };
+
+    const bulkImport = trpc.adminSubscribers.bulkImport.useMutation({
+        onSuccess: async (res) => {
+            await utils.adminSubscribers.list.invalidate();
+            toast.success(
+                `Imported ${res.inserted} · ${res.skippedDuplicate} duplicate${res.skippedDuplicate === 1 ? "" : "s"} skipped · ${res.skippedInvalid} invalid`
+            );
+        },
+        onError: (err) => toast.error(err.message || "Import failed"),
+    });
+
         return (
         <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -76,6 +112,13 @@ export const SubscribersTable = () => {
             onSave={(next) => create.mutate(next)}
             saving={create.isPending}
         />
+        <ImportSubscribersButton
+            onImport={(rows) => bulkImport.mutate({ rows })}
+            importing={bulkImport.isPending}
+        />
+        <Button variant="secondary" onClick={handleExport} disabled={exporting}>
+            {exporting ? "Exporting…" : "Export CSV"}
+        </Button>
         <Button variant="secondary" onClick={() => list.refetch()} disabled={list.isFetching}>
             {list.isFetching ? "Refreshing…" : "Refresh"}
         </Button>
@@ -129,6 +172,138 @@ export const SubscribersTable = () => {
     </Card>
 </div>
         )
+}
+
+type ImportRow = { email: string; firstName: string | null; lastName: string | null; status?: Status };
+
+// Minimal RFC-4180-ish CSV parser: handles quoted fields, embedded commas,
+// escaped quotes (""), and \r\n / \n line endings.
+function parseCsv(text: string): string[][] {
+    const rows: string[][] = [];
+    let field = "";
+    let row: string[] = [];
+    let inQuotes = false;
+    const src = text.replace(/^\uFEFF/, ""); // strip BOM
+
+    for (let i = 0; i < src.length; i++) {
+        const ch = src[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                if (src[i + 1] === '"') {
+                    field += '"';
+                    i++;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                field += ch;
+            }
+        } else if (ch === '"') {
+            inQuotes = true;
+        } else if (ch === ",") {
+            row.push(field);
+            field = "";
+        } else if (ch === "\n" || ch === "\r") {
+            if (ch === "\r" && src[i + 1] === "\n") i++;
+            row.push(field);
+            field = "";
+            rows.push(row);
+            row = [];
+        } else {
+            field += ch;
+        }
+    }
+    // trailing field/row
+    if (field.length > 0 || row.length > 0) {
+        row.push(field);
+        rows.push(row);
+    }
+    return rows.filter((r) => r.some((c) => c.trim() !== ""));
+}
+
+const VALID_STATUSES: Status[] = ["pending", "subscribed", "unsubscribed"];
+
+function rowsToImport(parsed: string[][]): ImportRow[] {
+    if (parsed.length === 0) return [];
+
+    // Detect header row: if first row contains an "email" cell.
+    const first = parsed[0].map((c) => c.trim().toLowerCase());
+    const hasHeader = first.includes("email");
+
+    let idxEmail = 0;
+    let idxFirst = 1;
+    let idxLast = 2;
+    let idxStatus = 3;
+    let dataRows = parsed;
+
+    if (hasHeader) {
+        const find = (names: string[]) => first.findIndex((c) => names.includes(c));
+        idxEmail = find(["email", "e-mail", "email address"]);
+        idxFirst = find(["first_name", "first name", "firstname", "first"]);
+        idxLast = find(["last_name", "last name", "lastname", "last"]);
+        idxStatus = find(["status"]);
+        dataRows = parsed.slice(1);
+    }
+
+    const out: ImportRow[] = [];
+    for (const r of dataRows) {
+        const email = (idxEmail >= 0 ? r[idxEmail] : "")?.trim() ?? "";
+        if (!email) continue;
+        const firstName = idxFirst >= 0 ? (r[idxFirst]?.trim() || null) : null;
+        const lastName = idxLast >= 0 ? (r[idxLast]?.trim() || null) : null;
+        const rawStatus = idxStatus >= 0 ? (r[idxStatus]?.trim().toLowerCase() ?? "") : "";
+        const status = VALID_STATUSES.includes(rawStatus as Status) ? (rawStatus as Status) : undefined;
+        out.push({ email, firstName, lastName, status });
+    }
+    return out;
+}
+
+function ImportSubscribersButton({
+    onImport,
+    importing,
+}: {
+    onImport: (rows: ImportRow[]) => void;
+    importing: boolean;
+}) {
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    const handleFile = async (file: File) => {
+        try {
+            const text = await file.text();
+            const parsed = parseCsv(text);
+            const rows = rowsToImport(parsed);
+            if (rows.length === 0) {
+                toast.error("No valid rows found in CSV");
+                return;
+            }
+            onImport(rows);
+        } catch (err: any) {
+            toast.error(err?.message || "Failed to read CSV");
+        }
+    };
+
+    return (
+        <>
+            <input
+                ref={inputRef}
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleFile(file);
+                    e.target.value = "";
+                }}
+            />
+            <Button
+                variant="secondary"
+                onClick={() => inputRef.current?.click()}
+                disabled={importing}
+            >
+                {importing ? "Importing…" : "Import CSV"}
+            </Button>
+        </>
+    );
 }
 
 function AddSubscriberDialog({
