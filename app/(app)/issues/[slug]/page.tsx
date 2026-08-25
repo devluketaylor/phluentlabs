@@ -135,7 +135,7 @@ export default async function IssuePage({ params }: Props) {
     };
 
     return (
-        <div className="max-w-2xl mx-auto px-6 py-12">
+        <div className="max-w-2xl mx-auto px-4 py-10 sm:px-6 sm:py-12">
             <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
@@ -151,7 +151,7 @@ export default async function IssuePage({ params }: Props) {
 
             <article>
                 <header className="mb-8 space-y-3">
-                    <h1 className="text-3xl font-bold tracking-tight leading-tight">{issue.subject}</h1>
+                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight leading-tight">{issue.subject}</h1>
                     {issue.preheader && (
                         <p className="text-lg text-muted-foreground leading-relaxed">{issue.preheader}</p>
                     )}

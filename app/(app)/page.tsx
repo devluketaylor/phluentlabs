@@ -117,13 +117,13 @@ export default function HomePage() {
     };
 
     return (
-        <main className="mx-auto max-w-2xl px-6">
+        <main className="mx-auto max-w-2xl px-4 sm:px-6">
             {/* Hero */}
-            <section className="py-16 text-center space-y-4">
+            <section className="py-12 sm:py-16 text-center space-y-4">
                 <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs text-muted-foreground mb-2">
                     every sunday · for developers
                 </div>
-                <h1 className="text-4xl font-bold tracking-tight">
+                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
                     <span className="bg-linear-to-tr from-primary to-red-500 bg-clip-text text-transparent">
                         Phluent
                     </span>
@@ -155,7 +155,7 @@ export default function HomePage() {
             </section>
 
             {/* Subscribe form */}
-            <section className="rounded-2xl border bg-card p-6 shadow-sm">
+            <section className="rounded-2xl border bg-card p-5 sm:p-6 shadow-sm">
                 <h2 className="font-semibold mb-4">Subscribe for free</h2>
                 <FormProvider {...methods}>
                     <Form {...methods}>
