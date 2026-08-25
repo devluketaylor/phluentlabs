@@ -20,7 +20,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] Fix subscribers edit Status dropdown (raw Radix SelectItem → ui wrapper) — pushed `9c390e8`
 - [x] Add-subscriber button + manual add form — local `fe38510`
 - [x] CSV import (upload) + export (download) for subscribers — local `a17c44b`
-- [ ] Pagination + total counts on subscribers table
+- [x] Pagination + total counts on subscribers table — local `d4b5a9d`
 - [ ] Pagination + total counts on newsletters table
 - [ ] Bulk actions on subscribers (multi-select → status change / delete / export)
 - [ ] Toast notifications for all admin mutations (no more silent saves)
@@ -39,6 +39,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ## Log (newest first)
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
 
+### 2026-08-25 (8:00am)
+- Pagination + total counts on subscribers table. Backend: `adminSubscribers.list` now returns `{ rows, total }` — total is a `count()` over the same filtered `where` (search + status), run in parallel with the paged rows query via `Promise.all`. UI: page-based pagination (pageSize 25) with `offset = page * pageSize`; Previous/Next controls, "Showing X–Y of N subscribers" range label, "Page N of M" indicator; resets to page 0 whenever search/status filter changes (useEffect); `placeholderData: (prev) => prev` keeps the table steady while paging (no flash). Updated all consumers of the old array return shape (`rows.map`, empty-state check). Committed locally `d4b5a9d`. tsc clean (exit 0). Tested authed via tRPC against dev server: list returns `{rows, total}`; unfiltered total=4; status=subscribed → total=2 with 2 rows (count honors filters). Reused `@/components/ui/*`; no raw radix; light/dark safe (muted-foreground/secondary only).
 ### 2026-08-24 (8:00pm)
 - CSV import + export for subscribers. Backend: `adminSubscribers.exportCsv` (query; honors current search/status filters, RFC-4180 quoting/escaping, header row `email,first_name,last_name,status,created_at`) and `adminSubscribers.bulkImport` (mutation; case-insensitive dedupe within the batch AND against existing DB emails via `inArray`, email-format validation, sets confirmedAt/unsubscribedAt per status, returns `{inserted, skippedDuplicate, skippedInvalid, errors}`). UI: "Export CSV" (client Blob download, timestamped filename) + "Import CSV" (hidden file input → client-side CSV parser with quoted-field/BOM handling + header auto-detection) buttons in the subscribers table header, toast feedback throughout. Committed locally `a17c44b`. tsc clean (exit 0). Tested authed via tRPC: export→200 returned proper CSV for 4 seed rows; bulkImport of 5 rows (2 new incl. an in-batch case dup, 1 existing dup, 1 invalid email)→`inserted:2, skippedDuplicate:1, skippedInvalid:1` with error msg; verified inserted rows (email lowercased, confirmedAt set for subscribed / null for pending, last-in-batch value won); deleted the 2 test rows after. Reused `@/components/ui/*`; no raw radix.
 
