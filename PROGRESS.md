@@ -19,7 +19,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ### Tier 1 — Fix + foundational polish
 - [x] Fix subscribers edit Status dropdown (raw Radix SelectItem → ui wrapper) — pushed `9c390e8`
 - [x] Add-subscriber button + manual add form — local `fe38510`
-- [ ] CSV import (upload) + export (download) for subscribers
+- [x] CSV import (upload) + export (download) for subscribers — local `a17c44b`
 - [ ] Pagination + total counts on subscribers table
 - [ ] Pagination + total counts on newsletters table
 - [ ] Bulk actions on subscribers (multi-select → status change / delete / export)
@@ -38,6 +38,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Log (newest first)
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
+
+### 2026-08-24 (8:00pm)
+- CSV import + export for subscribers. Backend: `adminSubscribers.exportCsv` (query; honors current search/status filters, RFC-4180 quoting/escaping, header row `email,first_name,last_name,status,created_at`) and `adminSubscribers.bulkImport` (mutation; case-insensitive dedupe within the batch AND against existing DB emails via `inArray`, email-format validation, sets confirmedAt/unsubscribedAt per status, returns `{inserted, skippedDuplicate, skippedInvalid, errors}`). UI: "Export CSV" (client Blob download, timestamped filename) + "Import CSV" (hidden file input → client-side CSV parser with quoted-field/BOM handling + header auto-detection) buttons in the subscribers table header, toast feedback throughout. Committed locally `a17c44b`. tsc clean (exit 0). Tested authed via tRPC: export→200 returned proper CSV for 4 seed rows; bulkImport of 5 rows (2 new incl. an in-batch case dup, 1 existing dup, 1 invalid email)→`inserted:2, skippedDuplicate:1, skippedInvalid:1` with error msg; verified inserted rows (email lowercased, confirmedAt set for subscribed / null for pending, last-in-batch value won); deleted the 2 test rows after. Reused `@/components/ui/*`; no raw radix.
 
 ### 2026-08-24 (6:20pm)
 - Added `adminSubscribers.create` mutation (email validation, lowercases/dedupes email — rejects duplicates, generates UUID, sets confirmedAt/unsubscribedAt based on chosen status) + "Add subscriber" dialog in the subscribers table header (email/first/last/status fields, resets on close). Committed locally `fe38510`. tsc clean. Tested via authed tRPC: create→200 (id returned), duplicate→rejected with clear message, list shows new row; deleted the test row after. Reused `@/components/ui/*` primitives; no raw radix.
