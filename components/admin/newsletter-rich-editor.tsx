@@ -176,12 +176,12 @@ export const NewsletterRichEditor = ({
 
                 <Separator orientation="vertical" className="mx-1 h-8" />
 
-                <div className="flex items-center gap-2">
+                <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                     <Input
                         value={link}
                         onChange={(e) => setLink(e.target.value)}
                         placeholder="https://..."
-                        className="h-9 w-[220px]"
+                        className="h-9 w-full min-w-[140px] flex-1 sm:w-[220px] sm:flex-none"
                     />
                     <Button type="button" variant="secondary" size="sm" onClick={setOrUnsetLink}>
                         Set link

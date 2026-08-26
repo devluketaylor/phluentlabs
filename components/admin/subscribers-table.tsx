@@ -396,7 +396,7 @@ function AddSubscriberDialog({
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-2">
                             <div className="text-sm font-medium">First name</div>
                             <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
@@ -485,7 +485,7 @@ function EditSubscriberDialog({
                         <Input value={email} onChange={(e) => setEmail(e.target.value)} />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
                         <div className="space-y-2">
                             <div className="text-sm font-medium">First name</div>
                             <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
