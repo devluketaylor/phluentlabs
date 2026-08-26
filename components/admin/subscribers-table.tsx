@@ -8,6 +8,7 @@ import {Input} from "@/components/ui/input";
 import {Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger} from "@/components/ui/dialog";
 import {Card} from "@/components/ui/card";
 import {toast} from "sonner";
+import Link from "next/link";
 
 type Status = "pending" | "subscribed" | "unsubscribed";
 
@@ -270,11 +271,11 @@ export const SubscribersTable = () => {
                     disabled={rows.length === 0}
                 />
             </div>
-            <div className="col-span-4">Email</div>
+            <div className="col-span-3">Email</div>
             <div className="col-span-2">First</div>
             <div className="col-span-2">Last</div>
             <div className="col-span-2">Status</div>
-            <div className="col-span-1 text-right">Actions</div>
+            <div className="col-span-2 text-right">Actions</div>
         </div>
 
         {rows.map((s) => (
@@ -288,11 +289,14 @@ export const SubscribersTable = () => {
                         onChange={() => toggleRow(s.id)}
                     />
                 </div>
-                <div className="col-span-4 truncate text-sm">{s.email}</div>
+                <div className="col-span-3 truncate text-sm">{s.email}</div>
                 <div className="col-span-2 truncate text-sm text-muted-foreground">{s.firstName ?? "—"}</div>
                 <div className="col-span-2 truncate text-sm text-muted-foreground">{s.lastName ?? "—"}</div>
                 <div className="col-span-2 text-sm">{s.status}</div>
-                <div className="col-span-1 flex justify-end gap-2">
+                <div className="col-span-2 flex justify-end gap-2">
+                    <Button asChild size="sm" variant="secondary">
+                        <Link href={`/admin/subscribers/${s.id}`}>View</Link>
+                    </Button>
                     <EditSubscriberDialog
                         subscriber={s}
                         onSave={(next) => update.mutate(next)}

@@ -2,6 +2,8 @@ import {adminProcedure, router} from "@/trpc/server";
 import {string, z} from "zod";
 import {and, count, desc, eq, ilike, inArray, or} from "drizzle-orm";
 import {subscribers} from "@/db/schemas/subscribers";
+import {newsletterRecipients} from "@/db/schemas/newsletter-recipients";
+import {newsletters} from "@/db/schemas/newsletters";
 
 export const adminSubscribersRouter = router({
     list: adminProcedure
@@ -44,6 +46,45 @@ export const adminSubscribersRouter = router({
             ]);
 
             return { rows, total: totalRow[0]?.total ?? 0 };
+        }),
+    // Detail view for a single subscriber: profile + lifecycle timestamps
+    // (signup / confirm / unsubscribe) and the list of newsletter issues they
+    // were a recipient of, with per-recipient delivery status. Read-only.
+    getDetail: adminProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .query(async ({ input, ctx }) => {
+            const [subscriber] = await ctx.db
+                .select()
+                .from(subscribers)
+                .where(eq(subscribers.id, input.id));
+
+            if (!subscriber) {
+                throw new Error("Subscriber not found.");
+            }
+
+            // Issues this subscriber was sent (joined to the newsletter for its
+            // subject/slug), newest recipient row first.
+            const issues = await ctx.db
+                .select({
+                    recipientId: newsletterRecipients.id,
+                    newsletterId: newsletters.id,
+                    subject: newsletters.subject,
+                    slug: newsletters.slug,
+                    newsletterStatus: newsletters.status,
+                    deliveryStatus: newsletterRecipients.status,
+                    error: newsletterRecipients.error,
+                    sentAt: newsletterRecipients.sentAt,
+                    createdAt: newsletterRecipients.createdAt,
+                })
+                .from(newsletterRecipients)
+                .innerJoin(
+                    newsletters,
+                    eq(newsletterRecipients.newsletterId, newsletters.id)
+                )
+                .where(eq(newsletterRecipients.subscriberId, input.id))
+                .orderBy(desc(newsletterRecipients.createdAt));
+
+            return { subscriber, issues, issuesCount: issues.length };
         }),
     exportCsv: adminProcedure
         .input(
