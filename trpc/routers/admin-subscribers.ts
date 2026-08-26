@@ -1,6 +1,6 @@
 import {adminProcedure, router} from "@/trpc/server";
 import {string, z} from "zod";
-import {and, count, desc, eq, ilike, inArray, or} from "drizzle-orm";
+import {and, asc, count, desc, eq, ilike, inArray, or} from "drizzle-orm";
 import {subscribers} from "@/db/schemas/subscribers";
 import {newsletterRecipients} from "@/db/schemas/newsletter-recipients";
 import {newsletters} from "@/db/schemas/newsletters";
@@ -12,12 +12,26 @@ export const adminSubscribersRouter = router({
                 q: z.string().optional(),
                 status: z.enum(["pending", "subscribed", "unsubscribed"]).optional(),
                 limit: z.number().int().min(1).max(200).default(50),
-                offset: z.number().int().min(0).default(0)
+                offset: z.number().int().min(0).default(0),
+                sortBy: z
+                    .enum(["email", "firstName", "lastName", "status", "createdAt"])
+                    .default("createdAt"),
+                sortDir: z.enum(["asc", "desc"]).default("desc"),
             })
         )
         .query(async ({ input, ctx }) => {
             const q = input.q?.trim();
             const parts = [];
+
+            const sortColumns = {
+                email: subscribers.email,
+                firstName: subscribers.firstName,
+                lastName: subscribers.lastName,
+                status: subscribers.status,
+                createdAt: subscribers.createdAt,
+            } as const;
+            const sortColumn = sortColumns[input.sortBy];
+            const orderBy = input.sortDir === "asc" ? asc(sortColumn) : desc(sortColumn);
 
             if (input.status) parts.push(eq(subscribers.status, input.status));
             if (q) {
@@ -36,7 +50,7 @@ export const adminSubscribersRouter = router({
                     .select()
                     .from(subscribers)
                     .where(where)
-                    .orderBy(desc(subscribers.createdAt))
+                    .orderBy(orderBy)
                     .limit(input.limit)
                     .offset(input.offset),
                 ctx.db

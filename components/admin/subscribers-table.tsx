@@ -7,10 +7,21 @@ import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/c
 import {Input} from "@/components/ui/input";
 import {Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger} from "@/components/ui/dialog";
 import {Card} from "@/components/ui/card";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
 import {toast} from "sonner";
+import {ArrowDown, ArrowUp, ChevronsUpDown} from "lucide-react";
 import Link from "next/link";
 
 type Status = "pending" | "subscribed" | "unsubscribed";
+type SortBy = "email" | "firstName" | "lastName" | "status" | "createdAt";
+type SortDir = "asc" | "desc";
 
 export const SubscribersTable = () => {
     const utils = trpc.useUtils();
@@ -18,17 +29,32 @@ export const SubscribersTable = () => {
     const [status, setStatus] = useState<Status | "all">("all");
     const [page, setPage] = useState(0);
     const pageSize = 25;
+    const [sortBy, setSortBy] = useState<SortBy>("createdAt");
+    const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-    // Reset to first page whenever the filters change.
+    // Reset to first page whenever the filters or sort change.
     useEffect(() => {
         setPage(0);
-    }, [q, status]);
+    }, [q, status, sortBy, sortDir]);
+
+    // Click a column header: toggle direction if already sorted by it,
+    // otherwise sort by it (asc for text, desc for the date column).
+    const toggleSort = (col: SortBy) => {
+        if (sortBy === col) {
+            setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+        } else {
+            setSortBy(col);
+            setSortDir(col === "createdAt" ? "desc" : "asc");
+        }
+    };
 
     const list = trpc.adminSubscribers.list.useQuery({
         q: q.trim() || undefined,
         status: status === "all" ? undefined : status,
         limit: pageSize,
         offset: page * pageSize,
+        sortBy,
+        sortDir,
     }, { placeholderData: (prev) => prev });
 
     const total = list.data?.total ?? 0;
@@ -258,70 +284,93 @@ export const SubscribersTable = () => {
     )}
 
     <Card className="overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="max-h-[70vh] overflow-auto">
         <div className="min-w-[720px]">
-        <div className="grid grid-cols-12 gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
-            <div className="col-span-1 flex items-center">
-                <input
-                    type="checkbox"
-                    aria-label="Select all on this page"
-                    className="h-4 w-4 cursor-pointer accent-[#ff5c5c]"
-                    checked={allVisibleSelected}
-                    onChange={toggleAllVisible}
-                    disabled={rows.length === 0}
-                />
-            </div>
-            <div className="col-span-3">Email</div>
-            <div className="col-span-2">First</div>
-            <div className="col-span-2">Last</div>
-            <div className="col-span-2">Status</div>
-            <div className="col-span-2 text-right">Actions</div>
-        </div>
-
-        {rows.map((s) => (
-            <div key={s.id} className="grid grid-cols-12 gap-2 px-3 py-2 items-center border-b">
-                <div className="col-span-1 flex items-center">
-                    <input
-                        type="checkbox"
-                        aria-label={`Select ${s.email}`}
-                        className="h-4 w-4 cursor-pointer accent-[#ff5c5c]"
-                        checked={selected.has(s.id)}
-                        onChange={() => toggleRow(s.id)}
-                    />
-                </div>
-                <div className="col-span-3 truncate text-sm">{s.email}</div>
-                <div className="col-span-2 truncate text-sm text-muted-foreground">{s.firstName ?? "—"}</div>
-                <div className="col-span-2 truncate text-sm text-muted-foreground">{s.lastName ?? "—"}</div>
-                <div className="col-span-2 text-sm">{s.status}</div>
-                <div className="col-span-2 flex justify-end gap-2">
-                    <Button asChild size="sm" variant="secondary">
-                        <Link href={`/admin/subscribers/${s.id}`}>View</Link>
-                    </Button>
-                    <EditSubscriberDialog
-                        subscriber={s}
-                        onSave={(next) => update.mutate(next)}
-                        saving={update.isPending}
-                    />
-                    <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => del.mutate({ id: s.id })}
-                        disabled={del.isPending}
-                    >
-                        Delete
-                    </Button>
-                </div>
-            </div>
-        ))}
+        <Table>
+            <TableHeader stickyHeader>
+                <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-[44px]">
+                        <input
+                            type="checkbox"
+                            aria-label="Select all on this page"
+                            className="h-4 w-4 cursor-pointer accent-[#ff5c5c]"
+                            checked={allVisibleSelected}
+                            onChange={toggleAllVisible}
+                            disabled={rows.length === 0}
+                        />
+                    </TableHead>
+                    <SortableHead label="Email" col="email" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                    <SortableHead label="First" col="firstName" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                    <SortableHead label="Last" col="lastName" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                    <SortableHead label="Status" col="status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                    <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {rows.map((s) => (
+                    <TableRow key={s.id} data-state={selected.has(s.id) ? "selected" : undefined}>
+                        <TableCell className="w-[44px]">
+                            <input
+                                type="checkbox"
+                                aria-label={`Select ${s.email}`}
+                                className="h-4 w-4 cursor-pointer accent-[#ff5c5c]"
+                                checked={selected.has(s.id)}
+                                onChange={() => toggleRow(s.id)}
+                            />
+                        </TableCell>
+                        <TableCell className="max-w-[240px] truncate">{s.email}</TableCell>
+                        <TableCell className="max-w-[160px] truncate text-muted-foreground">{s.firstName ?? "—"}</TableCell>
+                        <TableCell className="max-w-[160px] truncate text-muted-foreground">{s.lastName ?? "—"}</TableCell>
+                        <TableCell>{s.status}</TableCell>
+                        <TableCell>
+                            <div className="flex justify-end gap-2">
+                                <Button asChild size="sm" variant="secondary">
+                                    <Link href={`/admin/subscribers/${s.id}`}>View</Link>
+                                </Button>
+                                <EditSubscriberDialog
+                                    subscriber={s}
+                                    onSave={(next) => update.mutate(next)}
+                                    saving={update.isPending}
+                                />
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => del.mutate({ id: s.id })}
+                                    disabled={del.isPending}
+                                >
+                                    Delete
+                                </Button>
+                            </div>
+                        </TableCell>
+                    </TableRow>
+                ))}
+            </TableBody>
+        </Table>
         </div>
       </div>
 
-        {!list.isLoading && rows.length === 0 && (
-            <div className="p-10 text-center text-sm text-muted-foreground">No subscribers found.</div>
+        {!list.isLoading && rows.length === 0 && !list.error && (
+            <div className="flex flex-col items-center gap-1 p-12 text-center">
+                <div className="text-sm font-medium">No subscribers found</div>
+                <div className="text-sm text-muted-foreground">
+                    {q.trim() || status !== "all"
+                        ? "Try clearing your search or status filter."
+                        : "Add your first subscriber or import a CSV to get started."}
+                </div>
+            </div>
         )}
 
         {list.isLoading && (
-            <div className="p-10 text-center text-sm text-muted-foreground">Loading…</div>
+            <div className="space-y-2 p-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                        <div className="h-4 w-4 rounded bg-muted animate-pulse" />
+                        <div className="h-4 flex-1 rounded bg-muted animate-pulse" />
+                        <div className="h-4 w-24 rounded bg-muted animate-pulse" />
+                        <div className="h-4 w-24 rounded bg-muted animate-pulse" />
+                    </div>
+                ))}
+            </div>
         )}
 
         {list.error && (
@@ -359,6 +408,43 @@ export const SubscribersTable = () => {
     </div>
 </div>
         )
+}
+
+function SortableHead({
+    label,
+    col,
+    sortBy,
+    sortDir,
+    onSort,
+}: {
+    label: string;
+    col: SortBy;
+    sortBy: SortBy;
+    sortDir: SortDir;
+    onSort: (col: SortBy) => void;
+}) {
+    const active = sortBy === col;
+    return (
+        <TableHead className="p-0">
+            <button
+                type="button"
+                onClick={() => onSort(col)}
+                aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}
+                className="flex h-10 w-full items-center gap-1 px-3 text-left font-medium transition-colors hover:text-foreground"
+            >
+                <span>{label}</span>
+                {active ? (
+                    sortDir === "asc" ? (
+                        <ArrowUp className="h-3.5 w-3.5 text-[#ff5c5c]" />
+                    ) : (
+                        <ArrowDown className="h-3.5 w-3.5 text-[#ff5c5c]" />
+                    )
+                ) : (
+                    <ChevronsUpDown className="h-3.5 w-3.5 opacity-40" />
+                )}
+            </button>
+        </TableHead>
+    );
 }
 
 type ImportRow = { email: string; firstName: string | null; lastName: string | null; status?: Status };
