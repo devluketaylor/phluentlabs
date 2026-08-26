@@ -7,7 +7,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ---
 
 ## Now (active focus)
-- [x] Tier 1: Bulk actions on subscribers (multi-select → status/delete/export) — COMPLETE (`ff9f4a9`). Next focus: Tier 1 → "Toast notifications for all admin mutations (no more silent saves)".
+- [x] Tier 1: Toast notifications for all admin mutations — COMPLETE (`e11b806`). Next focus: Tier 2 → "Admin dashboard: total subscribers, growth this week, status breakdown, last send stats, scheduled queue".
 
 ## Workflow
 - **Dev loop:** cron `phluentlabs-dev-loop` runs every 3 hours (8x/day, around the clock, CDT). Each run does ONE board item, commits locally, updates this board, posts a summary to Discord.
@@ -33,7 +33,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
   - Consider reusing the template shape for the newsletter send path (`lib/send-newsletter.ts`) if trivial; otherwise leave a note. Keep tsc clean; test send against dev (Resend test mode / logged output).
 - [x] Pagination + total counts on newsletters table — local `8d8ddcf`
 - [x] Bulk actions on subscribers (multi-select → status change / delete / export) — local `ff9f4a9`
-- [ ] Toast notifications for all admin mutations (no more silent saves)
+- [x] Toast notifications for all admin mutations (no more silent saves) — local `e11b806`
 
 ### Tier 2 — Dashboard & insight
 - [ ] Admin dashboard: total subscribers, growth this week, status breakdown, last send stats, scheduled queue
@@ -48,6 +48,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Log (newest first)
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
+
+### 2026-08-26 (3:02am)
+- Toast notifications for all admin mutations (no more silent saves). The subscribers-table already had full sonner coverage (add/update/delete/export/import/bulk*), so the gap was the newsletters table (`components/admin/newsletters-table.tsx`), whose 5 mutations were completely silent — no `sonner` import, only `onSuccess: () => invalidate()` with no user feedback (the send/test dialogs had inline result/error `<p>` text, but delete/update/schedule saved with zero confirmation). Added `import {toast} from "sonner"` and wired success+error toasts into all five `useMutation`s: `update` ("Newsletter updated"), `delete` ("Newsletter deleted"), `send` (reads the router's `{ok, sent}` return → "Newsletter sent to N subscriber(s)", falls back to "Newsletter sent"), `sendTest` ("Test email sent"), and `schedule` (uses the mutation `vars.scheduledAt` to say "Newsletter scheduled" vs "Newsletter unscheduled"). Each `onError` surfaces `err.message` with a sensible fallback. Left the existing in-dialog result/error text as-is (belt-and-suspenders; the schedule/test dialogs also keep their local error state for inline display). Verified the router return shapes in `trpc/routers/newsletter.ts` (`send` → `{ok, sent}`, `schedule` → `{ok, scheduled, scheduledAt?}`) so the typed `res.sent`/`vars.scheduledAt` reads are correct. Confirmed `<Toaster />` is already mounted in `app/layout.tsx`, so toasts render app-wide. Committed locally `e11b806`. tsc clean (exit 0). Tested: `/admin/newsletters` → 307 (expected unauthed login redirect), compiles with no errors in next.log. UI-only mutation callbacks, no backend/schema/send-path changes; light/dark safe (sonner theming, no color classes touched); no raw radix.
 
 ### 2026-08-26 (12:30am)
 - Bulk actions on subscribers (multi-select → status change / delete / export). Backend (`trpc/routers/admin-subscribers.ts`): added `bulkUpdateStatus` (ids[] + status; sets `confirmedAt`/`unsubscribedAt` to match the single-row `create`/`update` semantics, updates `updatedAt`, returns `{updated}`) and `bulkDelete` (ids[] → `inArray` delete, returns `{deleted}`); both cap at 5000 ids. Extended `exportCsv` with an optional `ids[]` param so "export selected" scopes to exactly those rows (ignores search/status filters when ids present) — reuses the existing RFC-4180 CSV writer. UI (`components/admin/subscribers-table.tsx`): per-page multi-select — a header "select all on this page" checkbox + per-row checkboxes (native `<input type=checkbox>` styled `accent-[#ff5c5c]`; there is NO `components/ui/checkbox` wrapper and the hard rule forbids importing raw radix for wrapped primitives, so a styled native input avoids inventing a new primitive/dep). Selection lives in a `Set<string>` scoped to the visible page and auto-prunes ids that vanish after page-change/filter/delete (useEffect on `rows`). A bulk action bar appears above the table when ≥1 selected: "N selected", a `Set status…` Select (→ `bulkUpdateStatus`), Export selected (→ `exportCsv({ids})` client Blob download, `subscribers-selected-<date>.csv`), Delete selected (→ `bulkDelete`), and Clear; all disabled while any bulk op is in flight; each success invalidates the list + clears selection + toasts. Reworked the table grid to 12-col with a new `col-span-1` checkbox column (Email 5→4). Committed locally `ff9f4a9`. tsc clean (exit 0). Tested: `/admin/subscribers` → 307 (expected unauthed redirect), compiles with no errors in next.log; verified the bulk backend logic end-to-end against the dev DB via a throwaway drizzle/postgres script — seeded 3 pending rows, bulk-set→subscribed (all 3 `confirmed_at` populated), bulk-deleted (0 remaining), cleaned up. Reused `@/components/ui/*` (Select/Button/Card); no raw radix; light/dark safe (muted/secondary + coral `#ff5c5c` accent only, no hard-coded text colors).
