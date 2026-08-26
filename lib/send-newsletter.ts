@@ -65,15 +65,22 @@ export async function sendNewsletterToSubscribers(newsletterId: string): Promise
             })
         );
 
-        await resend.batch.send(emails);
+        const sendResult = await resend.batch.send(emails);
+
+        // Resend returns the created email ids in the same order as the batch we
+        // submitted, so data[i].id corresponds to batch[i]. Capture it as
+        // resendId so the Resend webhook handler can map delivery/open/click/
+        // bounce events back to the right recipient row.
+        const sentIds = sendResult.data?.data ?? [];
 
         await db.insert(newsletterRecipients).values(
-            batch.map((sub) => ({
+            batch.map((sub, idx) => ({
                 id: crypto.randomUUID(),
                 newsletterId: newsletter.id,
                 subscriberId: sub.id,
                 status: "sent",
                 sentAt: new Date(),
+                resendId: sentIds[idx]?.id ?? null,
             }))
         ).onConflictDoNothing();
     }

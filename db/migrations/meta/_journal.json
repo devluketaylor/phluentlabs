@@ -15,6 +15,13 @@
       "when": 1787537727082,
       "tag": "0001_warm_master_mold",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787785506538,
+      "tag": "0002_wide_gamora",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,16 @@ export const newsletterRecipients = pgTable("newsletter_recipients", {
     status: text("status").notNull().default("queued"),
     error: text("error"),
     sentAt: timestamp("sent_at"),
+    // Resend's per-email id (from batch.send data[].id), used to correlate
+    // incoming Resend webhook events back to this recipient row.
+    resendId: text("resend_id"),
+    // Delivery/engagement analytics timestamps, populated by the Resend webhook
+    // handler (email.delivered/opened/clicked/bounced/complained).
+    deliveredAt: timestamp("delivered_at"),
+    openedAt: timestamp("opened_at"),
+    clickedAt: timestamp("clicked_at"),
+    bouncedAt: timestamp("bounced_at"),
+    complainedAt: timestamp("complained_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
 },
     (t) => ({
