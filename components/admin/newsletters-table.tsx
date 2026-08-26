@@ -41,7 +41,25 @@ function StatusBadge({ status }: { status: string }) {
 export function NewslettersTable() {
     const utils = trpc.useUtils();
 
-    const list = trpc.adminNewsletter.list.useQuery({ limit: 50, offset: 0 });
+    const [page, setPage] = useState(0);
+    const pageSize = 25;
+
+    const list = trpc.adminNewsletter.list.useQuery(
+        { limit: pageSize, offset: page * pageSize },
+        { placeholderData: (prev) => prev }
+    );
+
+    const total = list.data?.total ?? 0;
+    const itemCount = list.data?.items.length ?? 0;
+    const pageCount = Math.max(1, Math.ceil(total / pageSize));
+    const rangeStart = total === 0 ? 0 : page * pageSize + 1;
+    const rangeEnd = Math.min(total, page * pageSize + itemCount);
+
+    // If the current page falls out of range (e.g. after deletes shrink the
+    // list), clamp back to the last valid page.
+    useEffect(() => {
+        if (page > pageCount - 1) setPage(pageCount - 1);
+    }, [page, pageCount]);
 
     const update = trpc.adminNewsletter.update.useMutation({
         onSuccess: () => utils.adminNewsletter.list.invalidate(),
@@ -157,6 +175,35 @@ export function NewslettersTable() {
                     <div className="p-4 text-sm text-destructive">{list.error.message}</div>
                 )}
             </Card>
+
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm text-muted-foreground">
+                    {total === 0
+                        ? "No newsletters"
+                        : `Showing ${rangeStart}\u2013${rangeEnd} of ${total} newsletter${total === 1 ? "" : "s"}`}
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="text-sm text-muted-foreground">
+                        Page {page + 1} of {pageCount}
+                    </div>
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}
+                        disabled={page === 0 || list.isFetching}
+                    >
+                        Previous
+                    </Button>
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                        disabled={page >= pageCount - 1 || list.isFetching}
+                    >
+                        Next
+                    </Button>
+                </div>
+            </div>
         </div>
     );
 }
