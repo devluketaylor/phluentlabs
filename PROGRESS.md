@@ -7,7 +7,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ---
 
 ## Now (active focus)
-- [x] Tier 1: Mobile responsiveness pass — COMPLETE. Admin tables (`62e49fa`), public pages (`fde232c`), dialog/editor widths (`9915087`). Next focus: Tier 1 → "Pagination + total counts on newsletters table".
+- [x] Tier 1: Pagination + total counts on newsletters table — COMPLETE (`8d8ddcf`). Next focus: Tier 1 → "Bulk actions on subscribers (multi-select → status change / delete / export)".
 
 ## Workflow
 - **Dev loop:** cron `phluentlabs-dev-loop` runs every 3 hours (8x/day, around the clock, CDT). Each run does ONE board item, commits locally, updates this board, posts a summary to Discord.
@@ -31,7 +31,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
   - Wire in the already-built-but-unused `unsubscribeUrl` (scope must be `"unsub"`, not the confirm token) OR remove the dead variable — currently it's computed and never used.
   - Clean up leftover debug `console.log(existing)` and `console.log(unsubscribeUrl)` lines while in this file.
   - Consider reusing the template shape for the newsletter send path (`lib/send-newsletter.ts`) if trivial; otherwise leave a note. Keep tsc clean; test send against dev (Resend test mode / logged output).
-- [ ] Pagination + total counts on newsletters table
+- [x] Pagination + total counts on newsletters table — local `8d8ddcf`
 - [ ] Bulk actions on subscribers (multi-select → status change / delete / export)
 - [ ] Toast notifications for all admin mutations (no more silent saves)
 
@@ -48,6 +48,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Log (newest first)
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
+
+### 2026-08-26 (12:04am)
+- Pagination + total counts on newsletters table. The backend `adminNewsletter.list` already returned `{items, total}` with `limit`/`offset` (built alongside the subscribers work), so this was a pure UI wire-up mirroring the subscribers-table pattern (`d4b5a9d`). In `components/admin/newsletters-table.tsx`: added `page` state (pageSize 25), switched the query from the hardcoded `{limit:50, offset:0}` to `{limit: pageSize, offset: page*pageSize}` with `placeholderData: (prev) => prev` (no flash while paging); added a footer row with a "Showing X\u2013Y of N newsletter(s)" range label, a "Page N of M" indicator, and Previous/Next buttons (disabled at bounds / while fetching), using the same `flex-col sm:flex-row` responsive layout + `@/components/ui/button` `variant="secondary"` as the subscribers footer. Added a small clamp `useEffect` so if the current page falls out of range after deletes shrink the list, it snaps back to the last valid page (subscribers resets on filter-change; newsletters has no filter, so this covers the delete case instead). CSS/state only — no backend, schema, or send-path changes. Committed locally `8d8ddcf`. tsc clean (exit 0). Tested against dev: `/admin/newsletters` → 307 (expected unauthed login redirect), page compiles with no errors in next.log. Light/dark safe (muted-foreground/secondary only, no hard-coded colors); no raw radix.
 
 ### 2026-08-25 (9:02pm)
 - Mobile responsiveness pass — FINAL SUB-COMMIT (dialog/editor widths); item now COMPLETE. Audited all admin dialogs at 375/390/414px. Base `DialogContent` already caps width safely on phones (`w-full max-w-[calc(100%-2rem)]`), so the wide newsletter dialogs (`sm:max-w-2xl/3xl`) shrink correctly — no change needed there. The CSV "Import" is a hidden file input, not a dialog. Two real overflow spots fixed: (1) the rich-editor link row (`components/admin/newsletter-rich-editor.tsx`) had a fixed-width `<Input w-[220px]>` in a non-wrapping `flex items-center gap-2` group beside Set-link/Unlink buttons — at ~295px dialog content width it overflowed horizontally. Made the group `w-full flex-wrap sm:w-auto` and the input `w-full flex-1 min-w-[140px] sm:w-[220px] sm:flex-none` so it grows to fill on mobile and wraps its buttons; desktop unchanged. (2) Add/Edit subscriber dialogs (`components/admin/subscribers-table.tsx`) used `grid grid-cols-2` for First/Last name (cramped ~140px cols at 375px) — changed to `grid gap-3 sm:grid-cols-2` so the two name fields stack on phones and sit side-by-side ≥640px, matching the existing responsive pattern used in the newsletter edit dialog. CSS-only, additive, no logic touched. Committed locally `9915087`. tsc clean (exit 0). Tested: `/admin/subscribers` + `/admin/newsletters` → 307 (expected unauthed login redirect), both compile with no errors in next.log. Light/dark safe (no color classes touched). **Mobile responsiveness pass fully done.**
