@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { trpc } from "@/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -62,21 +63,49 @@ export function NewslettersTable() {
     }, [page, pageCount]);
 
     const update = trpc.adminNewsletter.update.useMutation({
-        onSuccess: () => utils.adminNewsletter.list.invalidate(),
+        onSuccess: () => {
+            utils.adminNewsletter.list.invalidate();
+            toast.success("Newsletter updated");
+        },
+        onError: (err) => toast.error(err.message || "Failed to update newsletter"),
     });
 
     const del = trpc.adminNewsletter.delete.useMutation({
-        onSuccess: () => utils.adminNewsletter.list.invalidate(),
+        onSuccess: () => {
+            utils.adminNewsletter.list.invalidate();
+            toast.success("Newsletter deleted");
+        },
+        onError: (err) => toast.error(err.message || "Failed to delete newsletter"),
     });
 
     const send = trpc.adminNewsletter.send.useMutation({
-        onSuccess: () => utils.adminNewsletter.list.invalidate(),
+        onSuccess: (res) => {
+            utils.adminNewsletter.list.invalidate();
+            const sent = (res as { sent?: number } | undefined)?.sent;
+            toast.success(
+                typeof sent === "number"
+                    ? `Newsletter sent to ${sent} subscriber${sent === 1 ? "" : "s"}`
+                    : "Newsletter sent"
+            );
+        },
+        onError: (err) => toast.error(err.message || "Failed to send newsletter"),
     });
 
-    const sendTest = trpc.adminNewsletter.sendTest.useMutation();
+    const sendTest = trpc.adminNewsletter.sendTest.useMutation({
+        onSuccess: () => toast.success("Test email sent"),
+        onError: (err) => toast.error(err.message || "Failed to send test"),
+    });
 
     const schedule = trpc.adminNewsletter.schedule.useMutation({
-        onSuccess: () => utils.adminNewsletter.list.invalidate(),
+        onSuccess: (_res, vars) => {
+            utils.adminNewsletter.list.invalidate();
+            toast.success(
+                (vars as { scheduledAt?: string | null } | undefined)?.scheduledAt
+                    ? "Newsletter scheduled"
+                    : "Newsletter unscheduled"
+            );
+        },
+        onError: (err) => toast.error(err.message || "Failed to schedule newsletter"),
     });
 
     return (
