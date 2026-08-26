@@ -50,21 +50,28 @@ export const adminSubscribersRouter = router({
             z.object({
                 q: z.string().optional(),
                 status: z.enum(["pending", "subscribed", "unsubscribed"]).optional(),
+                ids: z.array(z.string().min(1)).min(1).max(5000).optional(),
             })
         )
         .query(async ({ input, ctx }) => {
             const q = input.q?.trim();
             const parts = [];
 
-            if (input.status) parts.push(eq(subscribers.status, input.status));
-            if (q) {
-                parts.push(
-                    or(
-                        ilike(subscribers.email, `%${q}%`),
-                        ilike(subscribers.firstName, `%${q}%`),
-                        ilike(subscribers.lastName, `%${q}%`),
+            // When explicit ids are provided (e.g. "export selected"), scope to
+            // just those rows and ignore the search/status filters.
+            if (input.ids && input.ids.length) {
+                parts.push(inArray(subscribers.id, input.ids));
+            } else {
+                if (input.status) parts.push(eq(subscribers.status, input.status));
+                if (q) {
+                    parts.push(
+                        or(
+                            ilike(subscribers.email, `%${q}%`),
+                            ilike(subscribers.firstName, `%${q}%`),
+                            ilike(subscribers.lastName, `%${q}%`),
+                        )
                     )
-                )
+                }
             }
 
             const where = parts.length ? and(...parts) : undefined;
@@ -242,5 +249,34 @@ export const adminSubscribersRouter = router({
         .mutation(async ({ input, ctx }) => {
             await ctx.db.delete(subscribers).where(eq(subscribers.id, input.id))
             return { ok: true }
-        })
+        }),
+
+    bulkUpdateStatus: adminProcedure
+        .input(
+            z.object({
+                ids: z.array(z.string().min(1)).min(1).max(5000),
+                status: z.enum(["pending", "subscribed", "unsubscribed"]),
+            })
+        )
+        .mutation(async ({ input, ctx }) => {
+            const now = new Date();
+            await ctx.db
+                .update(subscribers)
+                .set({
+                    status: input.status,
+                    confirmedAt: input.status === "subscribed" ? now : null,
+                    unsubscribedAt: input.status === "unsubscribed" ? now : null,
+                    updatedAt: now,
+                })
+                .where(inArray(subscribers.id, input.ids));
+
+            return { ok: true, updated: input.ids.length };
+        }),
+
+    bulkDelete: adminProcedure
+        .input(z.object({ ids: z.array(z.string().min(1)).min(1).max(5000) }))
+        .mutation(async ({ input, ctx }) => {
+            await ctx.db.delete(subscribers).where(inArray(subscribers.id, input.ids));
+            return { ok: true, deleted: input.ids.length };
+        }),
 })

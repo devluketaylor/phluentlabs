@@ -32,6 +32,36 @@ export const SubscribersTable = () => {
 
     const total = list.data?.total ?? 0;
     const rows = list.data?.rows ?? [];
+
+    // Multi-select state (scoped to the currently-visible page).
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    // Drop selections for rows no longer present (page change, deletes, filters).
+    useEffect(() => {
+        setSelected((prev) => {
+            if (prev.size === 0) return prev;
+            const visible = new Set(rows.map((r) => r.id));
+            const next = new Set([...prev].filter((id) => visible.has(id)));
+            return next.size === prev.size ? prev : next;
+        });
+    }, [rows]);
+
+    const selectedIds = [...selected];
+    const allVisibleSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+    const toggleRow = (id: string) =>
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    const toggleAllVisible = () =>
+        setSelected((prev) => {
+            const next = new Set(prev);
+            if (allVisibleSelected) rows.forEach((r) => next.delete(r.id));
+            else rows.forEach((r) => next.add(r.id));
+            return next;
+        });
+    const clearSelection = () => setSelected(new Set());
     const pageCount = Math.max(1, Math.ceil(total / pageSize));
     const rangeStart = total === 0 ? 0 : page * pageSize + 1;
     const rangeEnd = Math.min(total, page * pageSize + rows.length);
@@ -96,6 +126,50 @@ export const SubscribersTable = () => {
         onError: (err) => toast.error(err.message || "Import failed"),
     });
 
+    const bulkUpdateStatus = trpc.adminSubscribers.bulkUpdateStatus.useMutation({
+        onSuccess: async (res) => {
+            await utils.adminSubscribers.list.invalidate();
+            clearSelection();
+            toast.success(`Updated ${res.updated} subscriber${res.updated === 1 ? "" : "s"}`);
+        },
+        onError: (err) => toast.error(err.message || "Bulk update failed"),
+    });
+
+    const bulkDelete = trpc.adminSubscribers.bulkDelete.useMutation({
+        onSuccess: async (res) => {
+            await utils.adminSubscribers.list.invalidate();
+            clearSelection();
+            toast.success(`Deleted ${res.deleted} subscriber${res.deleted === 1 ? "" : "s"}`);
+        },
+        onError: (err) => toast.error(err.message || "Bulk delete failed"),
+    });
+
+    const [bulkExporting, setBulkExporting] = useState(false);
+    const handleExportSelected = async () => {
+        if (selectedIds.length === 0) return;
+        setBulkExporting(true);
+        try {
+            const res = await utils.adminSubscribers.exportCsv.fetch({ ids: selectedIds });
+            const blob = new Blob([res.csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            const stamp = new Date().toISOString().slice(0, 10);
+            a.download = `subscribers-selected-${stamp}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            toast.success(`Exported ${res.count} subscriber${res.count === 1 ? "" : "s"}`);
+        } catch (err: any) {
+            toast.error(err?.message || "Export failed");
+        } finally {
+            setBulkExporting(false);
+        }
+    };
+
+    const bulkBusy = bulkUpdateStatus.isPending || bulkDelete.isPending || bulkExporting;
+
         return (
         <div className="space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -138,11 +212,65 @@ export const SubscribersTable = () => {
     </div>
 </div>
 
+    {selectedIds.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-md border bg-muted/40 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm font-medium">
+                {selectedIds.length} selected
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+                <Select
+                    value=""
+                    onValueChange={(v) =>
+                        bulkUpdateStatus.mutate({ ids: selectedIds, status: v as Status })
+                    }
+                >
+                    <SelectTrigger className="w-[190px]" disabled={bulkBusy}>
+                        <SelectValue placeholder="Set status…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="pending">Set: Pending</SelectItem>
+                        <SelectItem value="subscribed">Set: Subscribed</SelectItem>
+                        <SelectItem value="unsubscribed">Set: Unsubscribed</SelectItem>
+                    </SelectContent>
+                </Select>
+                <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleExportSelected}
+                    disabled={bulkBusy}
+                >
+                    {bulkExporting ? "Exporting…" : "Export selected"}
+                </Button>
+                <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => bulkDelete.mutate({ ids: selectedIds })}
+                    disabled={bulkBusy}
+                >
+                    {bulkDelete.isPending ? "Deleting…" : "Delete selected"}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={clearSelection} disabled={bulkBusy}>
+                    Clear
+                </Button>
+            </div>
+        </div>
+    )}
+
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
         <div className="min-w-[720px]">
         <div className="grid grid-cols-12 gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
-            <div className="col-span-5">Email</div>
+            <div className="col-span-1 flex items-center">
+                <input
+                    type="checkbox"
+                    aria-label="Select all on this page"
+                    className="h-4 w-4 cursor-pointer accent-[#ff5c5c]"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisible}
+                    disabled={rows.length === 0}
+                />
+            </div>
+            <div className="col-span-4">Email</div>
             <div className="col-span-2">First</div>
             <div className="col-span-2">Last</div>
             <div className="col-span-2">Status</div>
@@ -151,7 +279,16 @@ export const SubscribersTable = () => {
 
         {rows.map((s) => (
             <div key={s.id} className="grid grid-cols-12 gap-2 px-3 py-2 items-center border-b">
-                <div className="col-span-5 truncate text-sm">{s.email}</div>
+                <div className="col-span-1 flex items-center">
+                    <input
+                        type="checkbox"
+                        aria-label={`Select ${s.email}`}
+                        className="h-4 w-4 cursor-pointer accent-[#ff5c5c]"
+                        checked={selected.has(s.id)}
+                        onChange={() => toggleRow(s.id)}
+                    />
+                </div>
+                <div className="col-span-4 truncate text-sm">{s.email}</div>
                 <div className="col-span-2 truncate text-sm text-muted-foreground">{s.firstName ?? "—"}</div>
                 <div className="col-span-2 truncate text-sm text-muted-foreground">{s.lastName ?? "—"}</div>
                 <div className="col-span-2 text-sm">{s.status}</div>
