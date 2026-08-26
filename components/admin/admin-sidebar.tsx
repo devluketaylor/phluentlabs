@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MailPlus, Newspaper, Users, LogOut } from "lucide-react";
+import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard } from "lucide-react";
 import {
     Sidebar,
     SidebarContent,
@@ -18,6 +18,7 @@ import {
 import { authClient } from "@/lib/auth-client";
 
 const navItems = [
+    { title: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
     { title: "Create Newsletter", href: "/admin", icon: MailPlus },
     { title: "Newsletters", href: "/admin/newsletters", icon: Newspaper },
     { title: "Subscribers", href: "/admin/subscribers", icon: Users },
