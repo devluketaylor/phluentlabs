@@ -7,7 +7,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ---
 
 ## Now (active focus)
-- [x] Tier 1: Pagination + total counts on newsletters table — COMPLETE (`8d8ddcf`). Next focus: Tier 1 → "Bulk actions on subscribers (multi-select → status change / delete / export)".
+- [x] Tier 1: Bulk actions on subscribers (multi-select → status/delete/export) — COMPLETE (`ff9f4a9`). Next focus: Tier 1 → "Toast notifications for all admin mutations (no more silent saves)".
 
 ## Workflow
 - **Dev loop:** cron `phluentlabs-dev-loop` runs every 3 hours (8x/day, around the clock, CDT). Each run does ONE board item, commits locally, updates this board, posts a summary to Discord.
@@ -32,7 +32,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
   - Clean up leftover debug `console.log(existing)` and `console.log(unsubscribeUrl)` lines while in this file.
   - Consider reusing the template shape for the newsletter send path (`lib/send-newsletter.ts`) if trivial; otherwise leave a note. Keep tsc clean; test send against dev (Resend test mode / logged output).
 - [x] Pagination + total counts on newsletters table — local `8d8ddcf`
-- [ ] Bulk actions on subscribers (multi-select → status change / delete / export)
+- [x] Bulk actions on subscribers (multi-select → status change / delete / export) — local `ff9f4a9`
 - [ ] Toast notifications for all admin mutations (no more silent saves)
 
 ### Tier 2 — Dashboard & insight
@@ -48,6 +48,9 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Log (newest first)
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
+
+### 2026-08-26 (12:30am)
+- Bulk actions on subscribers (multi-select → status change / delete / export). Backend (`trpc/routers/admin-subscribers.ts`): added `bulkUpdateStatus` (ids[] + status; sets `confirmedAt`/`unsubscribedAt` to match the single-row `create`/`update` semantics, updates `updatedAt`, returns `{updated}`) and `bulkDelete` (ids[] → `inArray` delete, returns `{deleted}`); both cap at 5000 ids. Extended `exportCsv` with an optional `ids[]` param so "export selected" scopes to exactly those rows (ignores search/status filters when ids present) — reuses the existing RFC-4180 CSV writer. UI (`components/admin/subscribers-table.tsx`): per-page multi-select — a header "select all on this page" checkbox + per-row checkboxes (native `<input type=checkbox>` styled `accent-[#ff5c5c]`; there is NO `components/ui/checkbox` wrapper and the hard rule forbids importing raw radix for wrapped primitives, so a styled native input avoids inventing a new primitive/dep). Selection lives in a `Set<string>` scoped to the visible page and auto-prunes ids that vanish after page-change/filter/delete (useEffect on `rows`). A bulk action bar appears above the table when ≥1 selected: "N selected", a `Set status…` Select (→ `bulkUpdateStatus`), Export selected (→ `exportCsv({ids})` client Blob download, `subscribers-selected-<date>.csv`), Delete selected (→ `bulkDelete`), and Clear; all disabled while any bulk op is in flight; each success invalidates the list + clears selection + toasts. Reworked the table grid to 12-col with a new `col-span-1` checkbox column (Email 5→4). Committed locally `ff9f4a9`. tsc clean (exit 0). Tested: `/admin/subscribers` → 307 (expected unauthed redirect), compiles with no errors in next.log; verified the bulk backend logic end-to-end against the dev DB via a throwaway drizzle/postgres script — seeded 3 pending rows, bulk-set→subscribed (all 3 `confirmed_at` populated), bulk-deleted (0 remaining), cleaned up. Reused `@/components/ui/*` (Select/Button/Card); no raw radix; light/dark safe (muted/secondary + coral `#ff5c5c` accent only, no hard-coded text colors).
 
 ### 2026-08-26 (12:04am)
 - Pagination + total counts on newsletters table. The backend `adminNewsletter.list` already returned `{items, total}` with `limit`/`offset` (built alongside the subscribers work), so this was a pure UI wire-up mirroring the subscribers-table pattern (`d4b5a9d`). In `components/admin/newsletters-table.tsx`: added `page` state (pageSize 25), switched the query from the hardcoded `{limit:50, offset:0}` to `{limit: pageSize, offset: page*pageSize}` with `placeholderData: (prev) => prev` (no flash while paging); added a footer row with a "Showing X\u2013Y of N newsletter(s)" range label, a "Page N of M" indicator, and Previous/Next buttons (disabled at bounds / while fetching), using the same `flex-col sm:flex-row` responsive layout + `@/components/ui/button` `variant="secondary"` as the subscribers footer. Added a small clamp `useEffect` so if the current page falls out of range after deletes shrink the list, it snaps back to the last valid page (subscribers resets on filter-change; newsletters has no filter, so this covers the delete case instead). CSS/state only — no backend, schema, or send-path changes. Committed locally `8d8ddcf`. tsc clean (exit 0). Tested against dev: `/admin/newsletters` → 307 (expected unauthed login redirect), page compiles with no errors in next.log. Light/dark safe (muted-foreground/secondary only, no hard-coded colors); no raw radix.
