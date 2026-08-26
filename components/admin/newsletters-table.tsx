@@ -21,6 +21,14 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
 
 type NewsletterStatus = "draft" | "scheduled" | "sent";
@@ -121,82 +129,99 @@ export function NewslettersTable() {
             </div>
 
             <Card className="overflow-hidden">
-              <div className="overflow-x-auto">
+              <div className="max-h-[70vh] overflow-auto">
                 <div className="min-w-[860px]">
-                <div className="grid grid-cols-12 gap-2 border-b bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground">
-                    <div className="col-span-3">Subject</div>
-                    <div className="col-span-2">Preheader</div>
-                    <div className="col-span-2">Status</div>
-                    <div className="col-span-2">Created</div>
-                    <div className="col-span-3 text-right">Actions</div>
-                </div>
-
-                {list.data?.items.map((n) => (
-                    <div key={n.id} className="grid grid-cols-12 gap-2 px-3 py-2 items-center border-b last:border-0">
-                        <div className="col-span-3 truncate text-sm font-medium">{n.subject}</div>
-                        <div className="col-span-2 truncate text-sm text-muted-foreground">
-                            {n.preheader ?? "—"}
-                        </div>
-                        <div className="col-span-2">
-                            <StatusBadge status={n.status} />
-                        </div>
-                        <div className="col-span-2 text-xs text-muted-foreground">
-                            {new Date(n.createdAt).toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                            })}
-                        </div>
-                        <div className="col-span-3 flex justify-end gap-1">
-                            <PreviewNewsletterDialog newsletter={n} />
-                            <TestSendDialog
-                                newsletter={n}
-                                onSendTest={(to) => sendTest.mutateAsync({ id: n.id, to })}
-                            />
-                            <EditNewsletterDialog
-                                newsletter={n}
-                                onSave={(data) => update.mutate(data)}
-                                saving={update.isPending}
-                            />
-                            {n.status !== "sent" && (
-                                <ScheduleDialog
-                                    newsletter={n}
-                                    onSchedule={(scheduledAt) =>
-                                        schedule.mutateAsync({ id: n.id, scheduledAt })
-                                    }
-                                />
-                            )}
-                            {n.status !== "sent" && (
-                                <SendNewsletterDialog
-                                    newsletter={n}
-                                    onSend={() => send.mutate({ id: n.id })}
-                                    sending={send.isPending}
-                                    error={send.error?.message}
-                                />
-                            )}
-                            <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => del.mutate({ id: n.id })}
-                                disabled={del.isPending}
-                            >
-                                Delete
-                            </Button>
-                        </div>
-                    </div>
-                ))}
+                <Table>
+                    <TableHeader stickyHeader>
+                        <TableRow className="hover:bg-transparent">
+                            <TableHead>Subject</TableHead>
+                            <TableHead>Preheader</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Created</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {list.data?.items.map((n) => (
+                            <TableRow key={n.id}>
+                                <TableCell className="max-w-[280px] truncate font-medium">{n.subject}</TableCell>
+                                <TableCell className="max-w-[220px] truncate text-muted-foreground">
+                                    {n.preheader ?? "—"}
+                                </TableCell>
+                                <TableCell>
+                                    <StatusBadge status={n.status} />
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                                    {new Date(n.createdAt).toLocaleDateString(undefined, {
+                                        month: "short",
+                                        day: "numeric",
+                                        year: "numeric",
+                                    })}
+                                </TableCell>
+                                <TableCell>
+                                    <div className="flex justify-end gap-1">
+                                        <PreviewNewsletterDialog newsletter={n} />
+                                        <TestSendDialog
+                                            newsletter={n}
+                                            onSendTest={(to) => sendTest.mutateAsync({ id: n.id, to })}
+                                        />
+                                        <EditNewsletterDialog
+                                            newsletter={n}
+                                            onSave={(data) => update.mutate(data)}
+                                            saving={update.isPending}
+                                        />
+                                        {n.status !== "sent" && (
+                                            <ScheduleDialog
+                                                newsletter={n}
+                                                onSchedule={(scheduledAt) =>
+                                                    schedule.mutateAsync({ id: n.id, scheduledAt })
+                                                }
+                                            />
+                                        )}
+                                        {n.status !== "sent" && (
+                                            <SendNewsletterDialog
+                                                newsletter={n}
+                                                onSend={() => send.mutate({ id: n.id })}
+                                                sending={send.isPending}
+                                                error={send.error?.message}
+                                            />
+                                        )}
+                                        <Button
+                                            variant="destructive"
+                                            size="sm"
+                                            onClick={() => del.mutate({ id: n.id })}
+                                            disabled={del.isPending}
+                                        >
+                                            Delete
+                                        </Button>
+                                    </div>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
                 </div>
               </div>
 
-                {!list.isLoading && (list.data?.items.length ?? 0) === 0 && (
-                    <div className="p-10 text-center text-sm text-muted-foreground">
-                        No newsletters yet.
+                {!list.isLoading && (list.data?.items.length ?? 0) === 0 && !list.error && (
+                    <div className="flex flex-col items-center gap-1 p-12 text-center">
+                        <div className="text-sm font-medium">No newsletters yet</div>
+                        <div className="text-sm text-muted-foreground">
+                            Create your first issue to see it listed here.
+                        </div>
                     </div>
                 )}
 
                 {list.isLoading && (
-                    <div className="p-10 text-center text-sm text-muted-foreground">
-                        Loading…
+                    <div className="space-y-2 p-3">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                            <div key={i} className="flex items-center gap-3">
+                                <div className="h-4 flex-1 rounded bg-muted animate-pulse" />
+                                <div className="h-4 w-32 rounded bg-muted animate-pulse" />
+                                <div className="h-4 w-16 rounded bg-muted animate-pulse" />
+                                <div className="h-4 w-20 rounded bg-muted animate-pulse" />
+                            </div>
+                        ))}
                     </div>
                 )}
 
