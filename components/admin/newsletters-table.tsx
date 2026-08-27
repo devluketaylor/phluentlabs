@@ -30,6 +30,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
+import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 
 type NewsletterStatus = "draft" | "scheduled" | "sent";
 
@@ -333,6 +334,7 @@ function PreviewNewsletterDialog({
     newsletter: { subject: string; preheader: string | null; html: string };
 }) {
     const [open, setOpen] = useState(false);
+    const [mode, setMode] = useState<"web" | "email">("web");
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -345,14 +347,45 @@ function PreviewNewsletterDialog({
                         <p className="text-sm text-muted-foreground">{newsletter.preheader}</p>
                     )}
                 </DialogHeader>
-                <div className="overflow-y-auto rounded-md border bg-background p-6">
-                    <div
-                        className="prose prose-sm dark:prose-invert max-w-none"
-                        dangerouslySetInnerHTML={{ __html: newsletter.html }}
-                    />
+                <div className="flex items-center gap-1">
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant={mode === "web" ? "default" : "secondary"}
+                        onClick={() => setMode("web")}
+                    >
+                        Web
+                    </Button>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant={mode === "email" ? "default" : "secondary"}
+                        onClick={() => setMode("email")}
+                    >
+                        Email
+                    </Button>
                 </div>
+                {mode === "web" ? (
+                    <div className="overflow-y-auto rounded-md border bg-background p-6">
+                        <div
+                            className="prose prose-sm dark:prose-invert max-w-none"
+                            dangerouslySetInnerHTML={{ __html: newsletter.html }}
+                        />
+                    </div>
+                ) : (
+                    <div className="overflow-hidden rounded-md border bg-muted">
+                        <iframe
+                            title="Email preview"
+                            sandbox=""
+                            className="h-[55vh] w-full border-0 bg-white"
+                            srcDoc={renderNewsletterEmailPreview({ html: newsletter.html })}
+                        />
+                    </div>
+                )}
                 <p className="text-xs text-muted-foreground">
-                    This is how the issue renders on the web. Use “Test send” to check it in an email client.
+                    {mode === "web"
+                        ? "How the issue renders on the web."
+                        : "Approximates how the issue renders in an inbox (body + unsubscribe footer). Use “Test send” to check in a real client."}
                 </p>
             </DialogContent>
         </Dialog>
