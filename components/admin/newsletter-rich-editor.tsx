@@ -10,7 +10,16 @@ import { Placeholder } from "@tiptap/extensions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { UploadButton } from "@/lib/uploadthing";
+import { newsletterTemplates } from "@/lib/newsletter-templates";
 
 type Props = {
     value: string;
@@ -95,6 +104,10 @@ export const NewsletterRichEditor = ({
         editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
     };
 
+    const insertTemplate = (html: string) => {
+        editor.chain().focus().insertContent(html).run();
+    };
+
     return (
         <div className={["w-full rounded-md border bg-background", className].filter(Boolean).join(" ")}>
             <div className="flex flex-wrap items-center gap-1 p-2">
@@ -173,6 +186,32 @@ export const NewsletterRichEditor = ({
                 >
                     Numbered
                 </Button>
+
+                <Separator orientation="vertical" className="mx-1 h-8" />
+
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="secondary" size="sm">
+                            Templates
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-64">
+                        <DropdownMenuLabel>Insert a block</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {newsletterTemplates.map((tpl) => (
+                            <DropdownMenuItem
+                                key={tpl.id}
+                                onSelect={() => insertTemplate(tpl.html)}
+                                className="flex flex-col items-start gap-0.5"
+                            >
+                                <span className="font-medium">{tpl.label}</span>
+                                <span className="text-xs text-muted-foreground">
+                                    {tpl.description}
+                                </span>
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
 
                 <Separator orientation="vertical" className="mx-1 h-8" />
 
