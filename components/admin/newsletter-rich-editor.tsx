@@ -6,6 +6,28 @@ import Underline from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
+
+// Extend the base Image node with a `width` attribute so we can offer
+// small/medium/full sizing. Rendered as an inline max-width style + attr
+// so it round-trips through getHTML()/setContent() and survives sending.
+const ResizableImage = Image.extend({
+    addAttributes() {
+        return {
+            ...this.parent?.(),
+            width: {
+                default: null,
+                parseHTML: (element) => element.getAttribute("width"),
+                renderHTML: (attributes) => {
+                    if (!attributes.width) return {};
+                    return {
+                        width: attributes.width,
+                        style: `max-width: ${attributes.width}px; width: 100%;`,
+                    };
+                },
+            },
+        };
+    },
+});
 import { Placeholder } from "@tiptap/extensions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +57,8 @@ export const NewsletterRichEditor = ({
                                          className,
                                      }: Props) => {
     const [link, setLink] = useState("");
+    const [imageSelected, setImageSelected] = useState(false);
+    const [imageAlt, setImageAlt] = useState("");
 
     const editor = useEditor({
         immediatelyRender: false,
@@ -54,11 +78,11 @@ export const NewsletterRichEditor = ({
                     target: "_blank",
                 },
             }),
-            Image.configure({
+            ResizableImage.configure({
                 inline: false,
                 allowBase64: false,
                 HTMLAttributes: {
-                    class: "my-4 rounded-md max-w-full h-auto",
+                    class: "my-4 rounded-md h-auto",
                 },
             }),
             Placeholder.configure({
@@ -68,6 +92,13 @@ export const NewsletterRichEditor = ({
         content: value || "<p></p>",
         onUpdate: ({ editor }) => {
             onChange(editor.getHTML());
+        },
+        onSelectionUpdate: ({ editor }) => {
+            const active = editor.isActive("image");
+            setImageSelected(active);
+            if (active) {
+                setImageAlt((editor.getAttributes("image").alt as string) ?? "");
+            }
         },
         editorProps: {
             attributes: {
@@ -106,6 +137,27 @@ export const NewsletterRichEditor = ({
 
     const insertTemplate = (html: string) => {
         editor.chain().focus().insertContent(html).run();
+    };
+
+    const setImageWidth = (width: string | null) => {
+        editor
+            .chain()
+            .focus()
+            .updateAttributes("image", { width })
+            .run();
+    };
+
+    const applyImageAlt = () => {
+        editor
+            .chain()
+            .focus()
+            .updateAttributes("image", { alt: imageAlt.trim() || null })
+            .run();
+    };
+
+    const removeImage = () => {
+        editor.chain().focus().deleteSelection().run();
+        setImageSelected(false);
     };
 
     return (
@@ -286,6 +338,82 @@ export const NewsletterRichEditor = ({
                     </Button>
                 </div>
             </div>
+
+            {imageSelected ? (
+                <>
+                    <Separator />
+                    <div className="flex w-full flex-wrap items-center gap-2 bg-muted/40 p-2">
+                        <span className="text-xs font-medium text-muted-foreground">
+                            Image
+                        </span>
+
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">Size:</span>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setImageWidth("200")}
+                            >
+                                Small
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setImageWidth("400")}
+                            >
+                                Medium
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => setImageWidth(null)}
+                            >
+                                Full
+                            </Button>
+                        </div>
+
+                        <Separator orientation="vertical" className="mx-1 h-8" />
+
+                        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-1">
+                            <Input
+                                value={imageAlt}
+                                onChange={(e) => setImageAlt(e.target.value)}
+                                onBlur={applyImageAlt}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        applyImageAlt();
+                                    }
+                                }}
+                                placeholder="Alt text (describe the image)"
+                                className="h-9 w-full min-w-[140px] flex-1 sm:w-[240px]"
+                            />
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                onClick={applyImageAlt}
+                            >
+                                Set alt
+                            </Button>
+                        </div>
+
+                        <Separator orientation="vertical" className="mx-1 h-8" />
+
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            onClick={removeImage}
+                        >
+                            Remove
+                        </Button>
+                    </div>
+                </>
+            ) : null}
 
             <Separator />
 
