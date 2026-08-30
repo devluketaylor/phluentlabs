@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/trpc/client";
-import { User, ArrowLeft, Mail, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { User, ArrowLeft, Mail, CheckCircle2, XCircle, Clock, Gift, Users } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -156,6 +156,54 @@ export default function SubscriberDetailPage() {
                                 </p>
                             )}
                         </>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Referral program */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <Gift className="size-4 text-primary" />
+                        Referrals
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {isLoading || !s ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-40" />
+                            <Skeleton className="h-4 w-56" />
+                        </div>
+                    ) : (
+                        <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-md border p-3">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <Users className="size-3.5" />
+                                    Referred signups
+                                </div>
+                                <p className="mt-1 text-sm font-medium">
+                                    {data?.referralCount ?? 0}
+                                </p>
+                            </div>
+                            <div className="rounded-md border p-3">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <Gift className="size-3.5" />
+                                    Referral code
+                                </div>
+                                <p className="mt-1 text-sm font-medium font-mono">
+                                    {s.referralCode ?? "—"}
+                                </p>
+                            </div>
+                            <div className="rounded-md border p-3">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <User className="size-3.5" />
+                                    Referred by
+                                </div>
+                                <p className="mt-1 text-sm font-medium truncate">
+                                    {data?.referredByEmail ?? "—"}
+                                </p>
+                            </div>
+                        </div>
                     )}
                 </CardContent>
             </Card>

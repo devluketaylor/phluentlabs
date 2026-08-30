@@ -4,7 +4,7 @@ import * as React from "react";
 import { z } from "zod";
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { trpc } from "@/trpc/client";
 
 import { SubscribeForm } from "@/components/forms/subscribe-form";
@@ -94,8 +94,13 @@ function ConfirmStep() {
     );
 }
 
-export default function HomePage() {
+function HomePageInner() {
     const router = useRouter();
+    // Referral attribution: a shared link looks like /?ref=<code>. We read the
+    // code here and pass it to the subscribe mutation so the referrer gets
+    // credited. Unknown/blank codes are safely ignored server-side.
+    const searchParams = useSearchParams();
+    const ref = searchParams.get("ref")?.trim() || undefined;
     const subscribeRequest = trpc.subscribe.request.useMutation();
     const subscriberCount = trpc.subscribe.count.useQuery(undefined, {
         staleTime: 5 * 60 * 1000,
@@ -112,6 +117,7 @@ export default function HomePage() {
             email: data.email,
             firstName: data.firstName,
             lastName: data.lastName,
+            ref,
         });
         router.push("/confirm");
     };
@@ -204,5 +210,15 @@ export default function HomePage() {
                 <NewsletterList />
             </section>
         </main>
+    );
+}
+
+export default function HomePage() {
+    // useSearchParams (read in HomePageInner for ?ref=) requires a Suspense
+    // boundary during prerender; wrap so the build stays happy.
+    return (
+        <React.Suspense fallback={null}>
+            <HomePageInner />
+        </React.Suspense>
     );
 }

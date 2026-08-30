@@ -29,6 +29,13 @@
       "when": 1788118856535,
       "tag": "0003_glossy_harpoon",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788131149451,
+      "tag": "0004_productive_katie_power",
+      "breakpoints": true
     }
   ]
 }

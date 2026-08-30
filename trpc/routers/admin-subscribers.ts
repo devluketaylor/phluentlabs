@@ -117,7 +117,29 @@ export const adminSubscribersRouter = router({
                 .where(eq(newsletterRecipients.subscriberId, input.id))
                 .orderBy(desc(newsletterRecipients.createdAt));
 
-            return { subscriber, issues, issuesCount: issues.length };
+            // Referral program: how many subscribers this person has referred,
+            // and (if they were referred) the email of who referred them.
+            const [{ referralCount }] = await ctx.db
+                .select({ referralCount: count() })
+                .from(subscribers)
+                .where(eq(subscribers.referredBy, input.id));
+
+            let referredByEmail: string | null = null;
+            if (subscriber.referredBy) {
+                const [ref] = await ctx.db
+                    .select({ email: subscribers.email })
+                    .from(subscribers)
+                    .where(eq(subscribers.id, subscriber.referredBy));
+                referredByEmail = ref?.email ?? null;
+            }
+
+            return {
+                subscriber,
+                issues,
+                issuesCount: issues.length,
+                referralCount: Number(referralCount ?? 0),
+                referredByEmail,
+            };
         }),
     exportCsv: adminProcedure
         .input(

@@ -3,10 +3,27 @@ import {z} from "zod";
 import {subscribers} from "@/db/schemas/subscribers";
 import {count, eq} from "drizzle-orm";
 import {signSubscriberToken, verifySubscriberToken} from "@/lib/subscriber-token";
+import {generateReferralCode} from "@/lib/referral";
+import type {db as Db} from "@/db/client";
 import {Resend} from "resend";
 import {renderConfirmEmail} from "@/lib/emails/confirm-email";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Generate a referral code that's unique against existing rows. Retries a few
+// times on the (statistically rare) collision before giving up gracefully.
+const makeUniqueReferralCode = async (database: typeof Db): Promise<string> => {
+    for (let attempt = 0; attempt < 6; attempt++) {
+        const code = generateReferralCode();
+        const [clash] = await database
+            .select({id: subscribers.id})
+            .from(subscribers)
+            .where(eq(subscribers.referralCode, code));
+        if (!clash) return code;
+    }
+    // Extremely unlikely; fall back to a longer code to virtually guarantee it.
+    return generateReferralCode(12);
+}
 
 export const sendConfirmEmail = async (
     to: string,
@@ -43,6 +60,9 @@ export const subscribeRouter = router({
                     email: z.string().email(),
                     firstName: z.string().min(1).optional(),
                     lastName: z.string().min(1).optional(),
+                    // Referral code from a ?ref=<code> link on the subscribe
+                    // page. Optional; ignored if it doesn't match a subscriber.
+                    ref: z.string().min(1).max(32).optional(),
                 }),
             )
             .mutation(async ({ input, ctx }) => {
@@ -57,12 +77,30 @@ export const subscribeRouter = router({
                 if (!existing) {
                     id = crypto.randomUUID();
 
+                    // Resolve the referrer (if any) from the ?ref= code. A
+                    // subscriber can't refer themselves (different email = new
+                    // row, so that's implicitly true here); unknown codes are
+                    // silently ignored so a bad link never blocks signup.
+                    let referredBy: string | null = null;
+                    const ref = input.ref?.trim();
+                    if (ref) {
+                        const [referrer] = await ctx.db
+                            .select({id: subscribers.id})
+                            .from(subscribers)
+                            .where(eq(subscribers.referralCode, ref));
+                        if (referrer) referredBy = referrer.id;
+                    }
+
+                    const referralCode = await makeUniqueReferralCode(ctx.db);
+
                     await ctx.db.insert(subscribers).values({
                         id,
                         email,
                         firstName: input.firstName ?? null,
                         lastName: input.lastName ?? null,
-                        status: "pending"
+                        status: "pending",
+                        referralCode,
+                        referredBy,
                     });
                 } else {
                     if (existing.status === "subscribed") return { ok: true, alreadySubscribed: true }
