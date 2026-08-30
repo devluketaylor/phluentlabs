@@ -7,7 +7,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ---
 
 ## Now (active focus)
-- [~] Tier 4 kicked off: **Tags / segments on subscribers DONE** (`15b518e`, local, schema change — hold for Tessie/Luke review). Next Tier 4 item: **Segmented send** (depends on tags).
+- [~] Tier 4 kicked off: **Tags / segments on subscribers DONE** (`340a665`, local, schema change — hold for Tessie/Luke review). Next Tier 4 item: **Segmented send** (depends on tags).
 - [~] Tier 3: Send analytics (opens/clicks/bounces) via Resend webhooks — SUB-COMMIT 1 of ~3 done (`aae7c47`): schema columns + Resend email-id capture. **Next sub-commits need a Luke/Tessie product call before building — see the `[!]` note under the Tier 3 item and the Log.**
 
 ## Workflow
@@ -67,7 +67,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
 
 ### 2026-08-30 (2:45pm) — TIER 4 ITEM 1: Tags / segments on subscribers ✅
-- **Built the first Tier 4 item: tags/segments on subscribers** (foundation for segmented sends). Commit **`15b518e`**, local only. `npx tsc --noEmit` exit 0.
+- **Built the first Tier 4 item: tags/segments on subscribers** (foundation for segmented sends). Commit **`340a665`**, local only. `npx tsc --noEmit` exit 0.
 - **⚠️ SCHEMA CHANGE FOR TESSIE REVIEW (touches migrations → PAUSE-and-ask before push):** one clean **additive** migration `db/migrations/0003_glossy_harpoon.sql` = exactly `ALTER TABLE "subscribers" ADD COLUMN "tags" text[] DEFAULT '{}' NOT NULL;`. No destructive/data changes; existing rows default to empty array. Schema src: `db/schemas/subscribers.ts` gained `tags: text("tags").array().notNull().default([])`. Chose a `text[]` column over a join table — simplest additive migration, and Postgres array-contains covers the filter query cleanly. Migration generated + applied to the local dev DB (verified column exists, NOT NULL, default `'{}'::text[]`).
 - **tRPC (`trpc/routers/admin-subscribers.ts`):** (1) new `setTags` mutation (replace full tag list on a subscriber; normalizes — trims, drops blanks, case-insensitive dedupe keeping first-seen casing); (2) new `listTags` query (distinct tags in use + usage count via `unnest()`, alpha-sorted); (3) `update` mutation now accepts optional `tags` (only writes when explicitly sent, so the plain edit form can't wipe tags); (4) `list` gained a `tag` filter using drizzle `arrayContains`. Reused the existing `adminProcedure` pattern.
 - **UI (`components/admin/subscribers-table.tsx`):** (a) tag chips editor in the Edit dialog — add via Enter/comma/Add button, remove via × on each chip, reuses `@/components/ui/{input,button}` (no raw radix); (b) a **Tags** column showing coral chips; (c) a **tag filter** `Select` next to the status filter, populated from `listTags` (shows `tag (count)`), auto-resets if the active tag's last usage is removed. Coral `#ff5c5c` chips styled with alpha bg/border so they're safe in light + dark.
