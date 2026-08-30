@@ -84,6 +84,41 @@ export const adminNewsletterRouter = router({
             })
         )
         .mutation(async ({ input, ctx }) => {
+            // Load the current row so a status change from the edit form stays
+            // consistent with the scheduledAt / sentAt timestamps. Setting a
+            // status via this free-form Select must NOT create impossible states
+            // (e.g. status="scheduled" with no scheduledAt would sit in limbo and
+            // never fire from the cron due-query; status="sent" with no sentAt
+            // would surface a never-actually-sent issue publicly).
+            const [existing] = await ctx.db
+                .select()
+                .from(newsletters)
+                .where(eq(newsletters.id, input.id));
+            if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Newsletter not found" });
+
+            // Only guard when the status is actually changing.
+            let scheduledAt: Date | null | undefined = undefined;
+            if (input.status !== existing.status) {
+                if (input.status === "scheduled") {
+                    if (!existing.scheduledAt) {
+                        throw new TRPCError({
+                            code: "BAD_REQUEST",
+                            message: "Use the Schedule action to schedule a send \u2014 it sets the send time. You can't set status to Scheduled without one.",
+                        });
+                    }
+                } else if (input.status === "sent") {
+                    if (!existing.sentAt) {
+                        throw new TRPCError({
+                            code: "BAD_REQUEST",
+                            message: "Use the Send action to send this newsletter. Status can't be set to Sent manually.",
+                        });
+                    }
+                } else if (input.status === "draft") {
+                    // Moving back to draft clears any pending schedule.
+                    scheduledAt = null;
+                }
+            }
+
             await ctx.db
                 .update(newsletters)
                 .set({
@@ -91,6 +126,7 @@ export const adminNewsletterRouter = router({
                     html: input.html,
                     preheader: input.preheader ?? null,
                     status: input.status,
+                    ...(scheduledAt !== undefined ? { scheduledAt } : {}),
                     slug: input.slug?.trim() ? toSlug(input.slug.trim()) : undefined,
                     updatedAt: new Date(),
                 })
