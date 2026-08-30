@@ -1,0 +1,1 @@
+ALTER TABLE "subscribers" ADD COLUMN "tags" text[] DEFAULT '{}' NOT NULL;

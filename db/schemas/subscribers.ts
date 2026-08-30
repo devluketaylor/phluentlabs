@@ -6,6 +6,9 @@ export const subscribers = pgTable("subscribers", {
     firstName: text("first_name"),
     lastName: text("last_name"),
     status: text("status").notNull().default("pending"),
+    // Free-form tags/segments for grouping subscribers (Kit-style). Additive:
+    // Postgres text[] with a default empty array so existing rows stay valid.
+    tags: text("tags").array().notNull().default([]),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     confirmedAt: timestamp("confirmed_at"),
     unsubscribedAt: timestamp("unsubscribed_at"),

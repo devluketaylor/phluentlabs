@@ -27,6 +27,7 @@ export const SubscribersTable = () => {
     const utils = trpc.useUtils();
     const [q, setQ] = useState("")
     const [status, setStatus] = useState<Status | "all">("all");
+    const [tag, setTag] = useState<string>("all");
     const [page, setPage] = useState(0);
     const pageSize = 25;
     const [sortBy, setSortBy] = useState<SortBy>("createdAt");
@@ -35,7 +36,7 @@ export const SubscribersTable = () => {
     // Reset to first page whenever the filters or sort change.
     useEffect(() => {
         setPage(0);
-    }, [q, status, sortBy, sortDir]);
+    }, [q, status, tag, sortBy, sortDir]);
 
     // Click a column header: toggle direction if already sorted by it,
     // otherwise sort by it (asc for text, desc for the date column).
@@ -51,11 +52,21 @@ export const SubscribersTable = () => {
     const list = trpc.adminSubscribers.list.useQuery({
         q: q.trim() || undefined,
         status: status === "all" ? undefined : status,
+        tag: tag === "all" ? undefined : tag,
         limit: pageSize,
         offset: page * pageSize,
         sortBy,
         sortDir,
     }, { placeholderData: (prev) => prev });
+
+    const tagsQuery = trpc.adminSubscribers.listTags.useQuery();
+    const availableTags = tagsQuery.data?.tags ?? [];
+    // If the active tag filter no longer exists (last usage removed), reset it.
+    useEffect(() => {
+        if (tag !== "all" && tagsQuery.data && !availableTags.some((t) => t.tag === tag)) {
+            setTag("all");
+        }
+    }, [tag, tagsQuery.data, availableTags]);
 
     const total = list.data?.total ?? 0;
     const rows = list.data?.rows ?? [];
@@ -103,7 +114,10 @@ export const SubscribersTable = () => {
 
     const update = trpc.adminSubscribers.update.useMutation({
         onSuccess: async () => {
-            await utils.adminSubscribers.list.invalidate();
+            await Promise.all([
+                utils.adminSubscribers.list.invalidate(),
+                utils.adminSubscribers.listTags.invalidate(),
+            ]);
             toast.success("Subscriber updated");
         },
         onError: (err) => toast.error(err.message || "Failed to update subscriber"),
@@ -219,6 +233,20 @@ export const SubscribersTable = () => {
         <SelectItem value="unsubscribed">Unsubscribed</SelectItem>
     </SelectContent>
 </Select>
+
+        <Select value={tag} onValueChange={(v) => setTag(v)}>
+<SelectTrigger className="sm:w-[200px]">
+        <SelectValue placeholder="Filter tag" />
+        </SelectTrigger>
+    <SelectContent>
+        <SelectItem value="all">All tags</SelectItem>
+        {availableTags.map((t) => (
+            <SelectItem key={t.tag} value={t.tag}>
+                {t.tag} ({t.count})
+            </SelectItem>
+        ))}
+    </SelectContent>
+</Select>
 </div>
 
     <div className="flex flex-wrap items-center gap-2">
@@ -303,6 +331,7 @@ export const SubscribersTable = () => {
                     <SortableHead label="First" col="firstName" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                     <SortableHead label="Last" col="lastName" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
                     <SortableHead label="Status" col="status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                    <TableHead>Tags</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
             </TableHeader>
@@ -322,6 +351,22 @@ export const SubscribersTable = () => {
                         <TableCell className="max-w-[160px] truncate text-muted-foreground">{s.firstName ?? "—"}</TableCell>
                         <TableCell className="max-w-[160px] truncate text-muted-foreground">{s.lastName ?? "—"}</TableCell>
                         <TableCell>{s.status}</TableCell>
+                        <TableCell className="max-w-[220px]">
+                            {s.tags && s.tags.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                    {s.tags.map((t: string) => (
+                                        <span
+                                            key={t}
+                                            className="inline-flex items-center rounded-full border border-[#ff5c5c]/40 bg-[#ff5c5c]/10 px-2 py-0.5 text-xs font-medium text-[#ff5c5c]"
+                                        >
+                                            {t}
+                                        </span>
+                                    ))}
+                                </div>
+                            ) : (
+                                <span className="text-muted-foreground">—</span>
+                            )}
+                        </TableCell>
                         <TableCell>
                             <div className="flex justify-end gap-2">
                                 <Button asChild size="sm" variant="secondary">
@@ -677,7 +722,7 @@ function EditSubscriberDialog({
                                   saving,
                               }: {
     subscriber: any;
-    onSave: (input: { id: string; email: string; firstName: string | null; lastName: string | null; status: Status }) => void;
+    onSave: (input: { id: string; email: string; firstName: string | null; lastName: string | null; status: Status; tags: string[] }) => void;
     saving: boolean;
 }) {
     const [open, setOpen] = useState(false);
@@ -686,6 +731,8 @@ function EditSubscriberDialog({
     const [firstName, setFirstName] = useState(subscriber.firstName ?? "");
     const [lastName, setLastName] = useState(subscriber.lastName ?? "");
     const [status, setStatus] = useState<Status>(subscriber.status);
+    const [tags, setTags] = useState<string[]>(subscriber.tags ?? []);
+    const [tagInput, setTagInput] = useState("");
 
     useEffect(() => {
         if (!open) return;
@@ -693,7 +740,19 @@ function EditSubscriberDialog({
         setFirstName(subscriber.firstName ?? "");
         setLastName(subscriber.lastName ?? "");
         setStatus(subscriber.status);
+        setTags(subscriber.tags ?? []);
+        setTagInput("");
     }, [open, subscriber]);
+
+    const addTag = (raw: string) => {
+        const t = raw.trim();
+        if (!t) return;
+        setTags((prev) =>
+            prev.some((x) => x.toLowerCase() === t.toLowerCase()) ? prev : [...prev, t]
+        );
+        setTagInput("");
+    };
+    const removeTag = (t: string) => setTags((prev) => prev.filter((x) => x !== t));
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -737,6 +796,51 @@ function EditSubscriberDialog({
                         </Select>
                     </div>
 
+                    <div className="space-y-2">
+                        <div className="text-sm font-medium">Tags</div>
+                        {tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                                {tags.map((t) => (
+                                    <span
+                                        key={t}
+                                        className="inline-flex items-center gap-1 rounded-full border border-[#ff5c5c]/40 bg-[#ff5c5c]/10 px-2 py-0.5 text-xs font-medium text-[#ff5c5c]"
+                                    >
+                                        {t}
+                                        <button
+                                            type="button"
+                                            aria-label={`Remove tag ${t}`}
+                                            onClick={() => removeTag(t)}
+                                            className="ml-0.5 rounded-full leading-none hover:opacity-70"
+                                        >
+                                            ×
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                        <div className="flex gap-2">
+                            <Input
+                                value={tagInput}
+                                onChange={(e) => setTagInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === ",") {
+                                        e.preventDefault();
+                                        addTag(tagInput);
+                                    }
+                                }}
+                                placeholder="Add a tag and press Enter"
+                            />
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => addTag(tagInput)}
+                                disabled={!tagInput.trim()}
+                            >
+                                Add
+                            </Button>
+                        </div>
+                    </div>
+
                     <div className="flex justify-end gap-2 pt-2">
                         <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
                         <Button
@@ -747,6 +851,7 @@ function EditSubscriberDialog({
                                     firstName: firstName.trim() ? firstName.trim() : null,
                                     lastName: lastName.trim() ? lastName.trim() : null,
                                     status,
+                                    tags,
                                 });
                                 setOpen(false);
                             }}

@@ -1,9 +1,25 @@
 import {adminProcedure, router} from "@/trpc/server";
 import {string, z} from "zod";
-import {and, asc, count, desc, eq, ilike, inArray, or} from "drizzle-orm";
+import {and, arrayContains, asc, count, desc, eq, ilike, inArray, or, sql} from "drizzle-orm";
 import {subscribers} from "@/db/schemas/subscribers";
 import {newsletterRecipients} from "@/db/schemas/newsletter-recipients";
 import {newsletters} from "@/db/schemas/newsletters";
+
+// Normalize a raw tag list: trim, drop empties, dedupe case-insensitively
+// (keeping first-seen casing), preserve order.
+function normalizeTags(tags: string[]): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of tags) {
+        const t = raw.trim();
+        if (!t) continue;
+        const key = t.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(t);
+    }
+    return out;
+}
 
 export const adminSubscribersRouter = router({
     list: adminProcedure
@@ -11,6 +27,7 @@ export const adminSubscribersRouter = router({
             z.object({
                 q: z.string().optional(),
                 status: z.enum(["pending", "subscribed", "unsubscribed"]).optional(),
+                tag: z.string().min(1).optional(),
                 limit: z.number().int().min(1).max(200).default(50),
                 offset: z.number().int().min(0).default(0),
                 sortBy: z
@@ -34,6 +51,8 @@ export const adminSubscribersRouter = router({
             const orderBy = input.sortDir === "asc" ? asc(sortColumn) : desc(sortColumn);
 
             if (input.status) parts.push(eq(subscribers.status, input.status));
+            // Filter to subscribers carrying a given tag (Postgres array contains).
+            if (input.tag) parts.push(arrayContains(subscribers.tags, [input.tag]));
             if (q) {
                 parts.push(
                     or(
@@ -281,7 +300,8 @@ export const adminSubscribersRouter = router({
                 email: z.string().email(),
                 firstName: z.string().nullable().optional(),
                 lastName: z.string().nullable().optional(),
-                status: z.enum(["pending", "subscribed", "unsubscribed"])
+                status: z.enum(["pending", "subscribed", "unsubscribed"]),
+                tags: z.array(z.string()).optional(),
             })
         )
         .mutation(async ({ input, ctx }) => {
@@ -292,12 +312,49 @@ export const adminSubscribersRouter = router({
                     firstName: input.firstName ?? null,
                     lastName: input.lastName ?? null,
                     status: input.status,
+                    // Only touch tags when the caller explicitly sends them, so
+                    // the plain edit form can't accidentally wipe existing tags.
+                    ...(input.tags !== undefined ? { tags: normalizeTags(input.tags) } : {}),
                     updatedAt: new Date(),
                 })
                 .where(eq(subscribers.id, input.id))
 
             return { ok: true };
         }),
+
+    // Replace the full tag list on a single subscriber (used by the tag chips
+    // input in the edit dialog). Normalizes: trims, drops empties, dedupes.
+    setTags: adminProcedure
+        .input(
+            z.object({
+                id: z.string().min(1),
+                tags: z.array(z.string()),
+            })
+        )
+        .mutation(async ({ input, ctx }) => {
+            await ctx.db
+                .update(subscribers)
+                .set({ tags: normalizeTags(input.tags), updatedAt: new Date() })
+                .where(eq(subscribers.id, input.id));
+            return { ok: true };
+        }),
+
+    // Distinct tags currently in use across all subscribers, with a usage count,
+    // for the table's tag filter dropdown. Uses unnest() to flatten the arrays.
+    listTags: adminProcedure.query(async ({ ctx }) => {
+        const rows = await ctx.db.execute<{ tag: string; count: number }>(sql`
+            SELECT tag, COUNT(*)::int AS count
+            FROM ${subscribers}, unnest(${subscribers.tags}) AS tag
+            GROUP BY tag
+            ORDER BY tag ASC
+        `);
+        // drizzle execute returns rows on the result object across drivers.
+        const list = (Array.isArray(rows) ? rows : (rows as any).rows ?? []) as {
+            tag: string;
+            count: number;
+        }[];
+        return { tags: list };
+    }),
 
     delete: adminProcedure
         .input(z.object({ id: string().min(1) }))
