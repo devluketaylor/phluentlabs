@@ -2,7 +2,7 @@ import { db } from "@/db/client";
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
-import { eq } from "drizzle-orm";
+import { and, arrayContains, eq } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 
@@ -15,7 +15,14 @@ const resend = new Resend(process.env.RESEND_API_KEY);
  *
  * Returns the number of recipients, or throws on invalid state.
  */
-export async function sendNewsletterToSubscribers(newsletterId: string): Promise<{ sent: number }> {
+export async function sendNewsletterToSubscribers(
+    newsletterId: string,
+    opts?: { tag?: string | null },
+): Promise<{ sent: number }> {
+    // Optional segmented send: when a tag is provided, only confirmed
+    // subscribers carrying that tag are targeted (Kit-style segments). When
+    // omitted/null, the audience is ALL confirmed subscribers as before.
+    const tag = opts?.tag?.trim() || null;
     const [newsletter] = await db
         .select()
         .from(newsletters)
@@ -24,13 +31,23 @@ export async function sendNewsletterToSubscribers(newsletterId: string): Promise
     if (!newsletter) throw new Error("Newsletter not found");
     if (newsletter.status === "sent") throw new Error("Newsletter already sent");
 
+    const audienceWhere = tag
+        ? and(eq(subscribers.status, "subscribed"), arrayContains(subscribers.tags, [tag]))
+        : eq(subscribers.status, "subscribed");
+
     const allSubscribers = await db
         .select({ id: subscribers.id, email: subscribers.email })
         .from(subscribers)
-        .where(eq(subscribers.status, "subscribed"));
+        .where(audienceWhere);
 
     if (allSubscribers.length === 0) {
-        // Still mark as sent so it doesn't get re-attempted forever.
+        if (tag) {
+            // Segmented send with an empty segment: don't silently mark the
+            // whole issue "sent" — the writer likely picked the wrong tag.
+            throw new Error(`No confirmed subscribers have the tag "${tag}"`);
+        }
+        // Full send with zero confirmed subscribers: still mark as sent so it
+        // doesn't get re-attempted forever.
         await db
             .update(newsletters)
             .set({ status: "sent", sentAt: new Date(), updatedAt: new Date() })

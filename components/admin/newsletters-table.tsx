@@ -182,7 +182,7 @@ export function NewslettersTable() {
                                         {n.status !== "sent" && (
                                             <SendNewsletterDialog
                                                 newsletter={n}
-                                                onSend={() => send.mutate({ id: n.id })}
+                                                onSend={(tag) => send.mutate({ id: n.id, tag })}
                                                 sending={send.isPending}
                                                 error={send.error?.message}
                                             />
@@ -454,6 +454,8 @@ function TestSendDialog({
     );
 }
 
+const ALL_AUDIENCE = "__all__";
+
 function SendNewsletterDialog({
     newsletter,
     onSend,
@@ -461,11 +463,31 @@ function SendNewsletterDialog({
     error,
 }: {
     newsletter: { id: string; subject: string };
-    onSend: () => void;
+    onSend: (tag: string | null) => void;
     sending: boolean;
     error?: string;
 }) {
     const [open, setOpen] = useState(false);
+    // "__all__" = every confirmed subscriber; any other value = that tag/segment.
+    const [audience, setAudience] = useState<string>(ALL_AUDIENCE);
+    const tag = audience === ALL_AUDIENCE ? null : audience;
+
+    // Reset the audience each time the dialog opens so it never carries a stale
+    // tag from a previous issue.
+    useEffect(() => {
+        if (open) setAudience(ALL_AUDIENCE);
+    }, [open]);
+
+    // All tags currently in use (for the segment dropdown).
+    const tagsQuery = trpc.adminSubscribers.listTags.useQuery(undefined, { enabled: open });
+    // Live count + sample of who will actually receive this issue.
+    const preview = trpc.adminNewsletter.audiencePreview.useQuery(
+        { tag },
+        { enabled: open }
+    );
+
+    const targetCount = preview.data?.count;
+    const emptyTarget = targetCount === 0;
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -477,21 +499,52 @@ function SendNewsletterDialog({
                     <DialogTitle>Send newsletter?</DialogTitle>
                 </DialogHeader>
                 <p className="text-sm text-muted-foreground">
-                    This will immediately send <span className="font-medium text-foreground">&ldquo;{newsletter.subject}&rdquo;</span> to all active subscribers. This cannot be undone.
+                    This will immediately send <span className="font-medium text-foreground">&ldquo;{newsletter.subject}&rdquo;</span> to the audience below. This cannot be undone.
                 </p>
+
+                <div className="space-y-2">
+                    <div className="text-sm font-medium">Audience</div>
+                    <Select value={audience} onValueChange={setAudience}>
+                        <SelectTrigger className="w-full">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={ALL_AUDIENCE}>All confirmed subscribers</SelectItem>
+                            {tagsQuery.data?.tags.map((t) => (
+                                <SelectItem key={t.tag} value={t.tag}>
+                                    Tag: {t.tag} ({t.count})
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                        {preview.isFetching
+                            ? "Resolving recipients…"
+                            : typeof targetCount === "number"
+                              ? `Will send to ${targetCount} confirmed subscriber${targetCount === 1 ? "" : "s"}${tag ? ` tagged \u201c${tag}\u201d` : ""}.`
+                              : ""}
+                    </p>
+                    {preview.data?.sample && preview.data.sample.length > 0 && (
+                        <p className="text-xs text-muted-foreground truncate">
+                            e.g. {preview.data.sample.map((s) => s.email).join(", ")}
+                            {typeof targetCount === "number" && targetCount > preview.data.sample.length ? "…" : ""}
+                        </p>
+                    )}
+                </div>
+
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 <DialogFooter>
                     <Button variant="secondary" onClick={() => setOpen(false)} disabled={sending}>
                         Cancel
                     </Button>
                     <Button
-                        disabled={sending}
+                        disabled={sending || preview.isFetching || emptyTarget}
                         onClick={() => {
-                            onSend();
+                            onSend(tag);
                             setOpen(false);
                         }}
                     >
-                        {sending ? "Sending…" : "Send now"}
+                        {sending ? "Sending…" : emptyTarget ? "No recipients" : "Send now"}
                     </Button>
                 </DialogFooter>
             </DialogContent>

@@ -12,7 +12,7 @@ function toSlug(text: string): string {
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
-import { and, count, desc, eq, lte } from "drizzle-orm";
+import { and, arrayContains, count, desc, eq, lte } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { TRPCError } from "@trpc/server";
@@ -142,15 +142,55 @@ export const adminNewsletterRouter = router({
         }),
 
     send: adminProcedure
-        .input(z.object({ id: z.string().min(1) }))
+        .input(
+            z.object({
+                id: z.string().min(1),
+                // Optional segment: when provided, only confirmed subscribers
+                // carrying this tag are targeted. Omit/null = all confirmed.
+                tag: z.string().trim().min(1).nullish(),
+            })
+        )
         .mutation(async ({ input }) => {
             try {
-                const { sent } = await sendNewsletterToSubscribers(input.id);
+                const { sent } = await sendNewsletterToSubscribers(input.id, { tag: input.tag });
                 return { ok: true, sent };
             } catch (e) {
                 const msg = e instanceof Error ? e.message : "Send failed";
                 throw new TRPCError({ code: "BAD_REQUEST", message: msg });
             }
+        }),
+
+    // Resolve the send audience WITHOUT sending: returns the recipient count
+    // and a small preview list for the chosen segment (All / by tag). Powers
+    // the audience selector in the Send dialog so the writer can confirm who
+    // will receive the issue before firing the (irreversible) real send.
+    audiencePreview: adminProcedure
+        .input(
+            z.object({
+                tag: z.string().trim().min(1).nullish(),
+            })
+        )
+        .query(async ({ input, ctx }) => {
+            const tag = input.tag?.trim() || null;
+            const where = tag
+                ? and(eq(subscribers.status, "subscribed"), arrayContains(subscribers.tags, [tag]))
+                : eq(subscribers.status, "subscribed");
+
+            const [[{ total }], sample] = await Promise.all([
+                ctx.db.select({ total: count() }).from(subscribers).where(where),
+                ctx.db
+                    .select({
+                        email: subscribers.email,
+                        firstName: subscribers.firstName,
+                        lastName: subscribers.lastName,
+                    })
+                    .from(subscribers)
+                    .where(where)
+                    .orderBy(subscribers.email)
+                    .limit(5),
+            ]);
+
+            return { tag, count: total, sample };
         }),
 
     // Schedule (or reschedule) a newsletter to send at a future time. A cron
