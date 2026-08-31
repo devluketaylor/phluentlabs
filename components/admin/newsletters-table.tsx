@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/table";
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
+import Link from "next/link";
+import { BarChart3 } from "lucide-react";
 
 type NewsletterStatus = "draft" | "scheduled" | "sent";
 
@@ -161,6 +163,14 @@ export function NewslettersTable() {
                                 </TableCell>
                                 <TableCell>
                                     <div className="flex justify-end gap-1">
+                                        {n.status === "sent" && (
+                                            <Button size="sm" variant="outline" asChild title="View send analytics">
+                                                <Link href={`/admin/newsletters/${n.id}`}>
+                                                    <BarChart3 className="size-4" />
+                                                    Analytics
+                                                </Link>
+                                            </Button>
+                                        )}
                                         <PreviewNewsletterDialog newsletter={n} />
                                         <TestSendDialog
                                             newsletter={n}

@@ -13,6 +13,10 @@ import {
     Send,
     CalendarClock,
     Newspaper,
+    MailOpen,
+    MousePointerClick,
+    AlertTriangle,
+    BarChart3,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -68,6 +72,10 @@ export default function DashboardPage() {
         trpc.adminDashboard.stats.useQuery(undefined, {
             refetchOnWindowFocus: false,
         });
+
+    const analytics = trpc.adminDashboard.sendAnalytics.useQuery(undefined, {
+        refetchOnWindowFocus: false,
+    });
 
     return (
         <div className="max-w-5xl mx-auto pt-8 pb-16 px-4 space-y-6">
@@ -267,6 +275,104 @@ export default function DashboardPage() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Send analytics (aggregate across recent sends) */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <BarChart3 className="size-4 text-primary" />
+                        Send analytics
+                        <span className="text-xs font-normal text-muted-foreground">
+                            (recent sends)
+                        </span>
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {analytics.isLoading || !analytics.data ? (
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            {Array.from({ length: 4 }).map((_, i) => (
+                                <Skeleton key={i} className="h-16 w-full" />
+                            ))}
+                        </div>
+                    ) : analytics.data.totals.recipients === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            No send analytics yet. Once issues are sent and Resend
+                            reports opens/clicks, aggregate rates appear here.
+                        </p>
+                    ) : (
+                        <>
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                                <div className="rounded-md border p-3">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <Send className="size-3.5" /> Delivered
+                                    </div>
+                                    <p className="mt-1 text-xl font-semibold">
+                                        {analytics.data.rates.deliveryRate}%
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        {analytics.data.totals.delivered.toLocaleString()} of{" "}
+                                        {analytics.data.totals.recipients.toLocaleString()}
+                                    </p>
+                                </div>
+                                <div className="rounded-md border p-3">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <MailOpen className="size-3.5" /> Open rate
+                                    </div>
+                                    <p className="mt-1 text-xl font-semibold text-[#ff5c5c]">
+                                        {analytics.data.rates.openRate}%
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        {analytics.data.totals.opened.toLocaleString()} opened
+                                    </p>
+                                </div>
+                                <div className="rounded-md border p-3">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <MousePointerClick className="size-3.5" /> Click rate
+                                    </div>
+                                    <p className="mt-1 text-xl font-semibold">
+                                        {analytics.data.rates.clickRate}%
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        {analytics.data.totals.clicked.toLocaleString()} clicked
+                                    </p>
+                                </div>
+                                <div className="rounded-md border p-3">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <AlertTriangle className="size-3.5" /> Bounce rate
+                                    </div>
+                                    <p className="mt-1 text-xl font-semibold">
+                                        {analytics.data.rates.bounceRate}%
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        {analytics.data.totals.bounced.toLocaleString()} bounced
+                                    </p>
+                                </div>
+                            </div>
+
+                            <ul className="divide-y">
+                                {analytics.data.issues.map((iss) => (
+                                    <li
+                                        key={iss.id}
+                                        className="flex flex-col gap-1 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                                    >
+                                        <Link
+                                            href={`/admin/newsletters/${iss.id}`}
+                                            className="min-w-0 truncate font-medium hover:text-[#ff5c5c]"
+                                        >
+                                            {iss.subject}
+                                        </Link>
+                                        <div className="flex items-center gap-4 text-xs text-muted-foreground whitespace-nowrap">
+                                            <span>{iss.openRate}% open</span>
+                                            <span>{iss.clickRate}% click</span>
+                                            <span>{iss.recipients.toLocaleString()} sent</span>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </>
+                    )}
+                </CardContent>
+            </Card>
 
             {/* Scheduled queue */}
             <Card>
