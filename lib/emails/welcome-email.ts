@@ -12,13 +12,17 @@ export const WELCOME_EMAIL_SUBJECT = `You're in — welcome to ${BRAND_NAME} �
  *   present we invite them to share it (ties into the referral program).
  * - `unsubscribeUrl` optional: footer unsubscribe link (mint with scope
  *   "unsub", never the confirm token).
+ * - `preferencesUrl` optional: footer link to the preferences center where
+ *   the subscriber can update their name, pause, or unsubscribe (mint with
+ *   scope "prefs").
  */
 export function renderWelcomeEmail(opts: {
     firstName?: string | null;
     shareUrl?: string;
     unsubscribeUrl?: string;
+    preferencesUrl?: string;
 }): { subject: string; html: string; text: string } {
-    const { firstName, shareUrl, unsubscribeUrl } = opts;
+    const { firstName, shareUrl, unsubscribeUrl, preferencesUrl } = opts;
 
     const greeting = firstName && firstName.trim()
         ? `Hey ${firstName.trim()},`
@@ -38,9 +42,14 @@ export function renderWelcomeEmail(opts: {
         <p class="email-muted" style="margin:24px 0 0 0;font-size:14px;color:#71717a;">In the meantime, keep an eye on your inbox — the next issue is on its way.</p>
     `;
 
+    const managePart = preferencesUrl
+        ? ` <a href="${preferencesUrl}" style="color:#a1a1aa;text-decoration:underline;">Manage your preferences</a>.`
+        : "";
     const footer = unsubscribeUrl
-        ? `You're receiving this because you confirmed your subscription at ${BRAND_NAME}. Changed your mind? <a href="${unsubscribeUrl}" style="color:#a1a1aa;text-decoration:underline;">Unsubscribe</a>.`
-        : undefined;
+        ? `You're receiving this because you confirmed your subscription at ${BRAND_NAME}. Changed your mind? <a href="${unsubscribeUrl}" style="color:#a1a1aa;text-decoration:underline;">Unsubscribe</a>.${managePart}`
+        : (preferencesUrl
+            ? `You're receiving this because you confirmed your subscription at ${BRAND_NAME}.${managePart}`
+            : undefined);
 
     const html = renderEmailLayout({
         preheader: `Your ${BRAND_NAME} subscription is confirmed — welcome aboard!`,
@@ -61,6 +70,7 @@ export function renderWelcomeEmail(opts: {
         `In the meantime, keep an eye on your inbox — the next issue is on its way.`,
         unsubscribeUrl ? `` : ``,
         unsubscribeUrl ? `Changed your mind? Unsubscribe: ${unsubscribeUrl}` : ``,
+        preferencesUrl ? `Manage your preferences: ${preferencesUrl}` : ``,
         ``,
         `— ${BRAND_NAME}`,
     ]

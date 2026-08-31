@@ -2,13 +2,15 @@ import { SignJWT, jwtVerify } from "jose";
 
 const secret = new TextEncoder().encode(process.env.SUBSCRIBER_TOKEN_SECRET!);
 
-type Scope = "confirm" | "unsub"
+type Scope = "confirm" | "unsub" | "prefs"
 
 export const signSubscriberToken = async (payload: { subId: string, email: string, scope: Scope }) => {
     return new SignJWT(payload)
         .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt()
         .setExpirationTime(payload.scope === "confirm" ? "24h" : "30d")
+        // Note: "unsub" and "prefs" tokens are long-lived (30d) so links in
+        // older emails keep working; "confirm" is short-lived (24h).
         .sign(secret)
 }
 

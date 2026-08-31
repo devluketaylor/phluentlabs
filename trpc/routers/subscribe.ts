@@ -49,7 +49,7 @@ export const sendConfirmEmail = async (
  */
 export const sendWelcomeEmail = async (
     to: string,
-    opts: {firstName?: string | null; shareUrl?: string; unsubscribeUrl?: string},
+    opts: {firstName?: string | null; shareUrl?: string; unsubscribeUrl?: string; preferencesUrl?: string},
 ) => {
     const {subject, html, text} = renderWelcomeEmail(opts);
     await resend.emails.send({
@@ -193,6 +193,7 @@ export const subscribeRouter = router({
                             : undefined;
 
                         let unsubscribeUrl: string | undefined;
+                        let preferencesUrl: string | undefined;
                         if (appUrl) {
                             const unsubToken = await signSubscriberToken({
                                 subId: existing.id,
@@ -202,12 +203,24 @@ export const subscribeRouter = router({
                             const u = new URL("/unsubscribe", appUrl);
                             u.searchParams.set("token", unsubToken);
                             unsubscribeUrl = u.toString();
+
+                            // Prefs token (scope "prefs") for the manage-
+                            // preferences link in the welcome email footer.
+                            const prefsToken = await signSubscriberToken({
+                                subId: existing.id,
+                                email: existing.email,
+                                scope: "prefs",
+                            });
+                            const p = new URL("/preferences", appUrl);
+                            p.searchParams.set("token", prefsToken);
+                            preferencesUrl = p.toString();
                         }
 
                         await sendWelcomeEmail(existing.email, {
                             firstName: existing.firstName,
                             shareUrl,
                             unsubscribeUrl,
+                            preferencesUrl,
                         });
                     } catch (err) {
                         console.error("welcome email send failed", err);
@@ -260,12 +273,110 @@ export const subscribeRouter = router({
             .input(z.object({ token: z.string().min(1) }))
             .mutation(async ({ input, ctx }) => {
                 const payload = await verifySubscriberToken(input.token);
-                if (payload.scope !== "unsub") throw new Error("Invalid token")
+                // Accept both a dedicated "unsub" token AND a "prefs" token, so
+                // the preferences center (which is handed a prefs token) can
+                // also let a subscriber fully unsubscribe without minting a
+                // second link. Both prove ownership of this row.
+                if (payload.scope !== "unsub" && payload.scope !== "prefs") throw new Error("Invalid token")
 
                 await ctx.db
                 .update(subscribers)
                     .set({ status: "unsubscribed", unsubscribedAt: new Date() })
                     .where(eq(subscribers.id, payload.subId))
+
+                return { ok: true };
+            }),
+
+        // ── Subscriber preferences center (Kit-style) ──────────────────────
+        // A signed-token public surface where a subscriber can update their
+        // name, PAUSE (temporarily stop) / RESUME emails, or fully
+        // unsubscribe — instead of the unsubscribe-only page. Reuses the same
+        // signed-token pattern as unsubscribe; the token is scope "prefs"
+        // (30d) and proves ownership of exactly this one subscriber row, so no
+        // one else's data is ever exposed.
+
+        // Read the caller's OWN current preferences (name + status). Token-gated.
+        getPreferences: publicProcedure
+            .input(z.object({ token: z.string().min(1) }))
+            .query(async ({ input, ctx }) => {
+                const payload = await verifySubscriberToken(input.token);
+                if (payload.scope !== "prefs") throw new Error("Invalid token")
+
+                const [me] = await ctx.db
+                    .select({
+                        email: subscribers.email,
+                        firstName: subscribers.firstName,
+                        lastName: subscribers.lastName,
+                        status: subscribers.status,
+                    })
+                    .from(subscribers)
+                    .where(eq(subscribers.id, payload.subId));
+                if (!me) throw new Error("Subscriber not found");
+
+                return {
+                    email: me.email,
+                    firstName: me.firstName ?? "",
+                    lastName: me.lastName ?? "",
+                    status: me.status,
+                };
+            }),
+
+        // Update the caller's OWN preferences. Token-gated (scope "prefs").
+        // Supports editing name and changing the delivery state to one of:
+        //   subscribed  → actively receiving (resume from paused)
+        //   paused      → temporarily stop (still confirmed, easy to resume)
+        //   unsubscribed→ fully opt out
+        // "paused" is a new free-form status value — no schema change needed
+        // (status is a free-form text column). The send audience only targets
+        // status = "subscribed", so paused subscribers are automatically
+        // skipped by the existing send path.
+        updatePreferences: publicProcedure
+            .input(z.object({
+                token: z.string().min(1),
+                firstName: z.string().max(200).optional(),
+                lastName: z.string().max(200).optional(),
+                status: z.enum(["subscribed", "paused", "unsubscribed"]).optional(),
+            }))
+            .mutation(async ({ input, ctx }) => {
+                const payload = await verifySubscriberToken(input.token);
+                if (payload.scope !== "prefs") throw new Error("Invalid token")
+
+                const [me] = await ctx.db
+                    .select({ id: subscribers.id })
+                    .from(subscribers)
+                    .where(eq(subscribers.id, payload.subId));
+                if (!me) throw new Error("Subscriber not found");
+
+                const patch: Partial<typeof subscribers.$inferInsert> = {
+                    updatedAt: new Date(),
+                };
+
+                // Only write name fields when explicitly provided; normalize
+                // blanks to null so we don't store empty strings.
+                if (input.firstName !== undefined) {
+                    const v = input.firstName.trim();
+                    patch.firstName = v.length ? v : null;
+                }
+                if (input.lastName !== undefined) {
+                    const v = input.lastName.trim();
+                    patch.lastName = v.length ? v : null;
+                }
+
+                if (input.status !== undefined) {
+                    patch.status = input.status;
+                    if (input.status === "unsubscribed") {
+                        patch.unsubscribedAt = new Date();
+                    } else if (input.status === "subscribed") {
+                        // Resuming from paused/unsubscribed: clear the opt-out
+                        // timestamp so the record reflects an active subscriber.
+                        patch.unsubscribedAt = null;
+                    }
+                }
+
+                await ctx.db
+                    .update(subscribers)
+                    .set(patch)
+                    .where(eq(subscribers.id, payload.subId));
 
                 return { ok: true };
             }),
