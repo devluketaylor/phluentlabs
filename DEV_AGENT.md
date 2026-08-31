@@ -20,8 +20,13 @@ Stack: Next.js 16 + tRPC + Drizzle/Postgres + better-auth.
 - Pipe verbose commands through `tail`/`grep`/`head`. For tsc, capture exit code + last few lines, not the whole run.
 - Don't re-`cat` files you've already read this run. Don't dump large outputs into context.
 
+## Autonomy (Luke, 2026-08-30): push is AUTHORIZED
+- You ARE authorized to `git push origin main` autonomously each run after commit — no need to ask Luke first. Push via the deploy key: `GIT_SSH_COMMAND="ssh -i /home/phluent/.openclaw/workspace-tessie/.ssh-keys/phluentlabs_deploy -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes" git push origin main`.
+- Additive/nullable schema migrations (ADD COLUMN nullable/defaulted, ADD nullable UNIQUE, CREATE TABLE/INDEX) are SAFE — commit and push them autonomously. Verify they are non-destructive first (see hard rule below).
+
 ## Hard rules (never violate)
-- NEVER push to main, NEVER deploy, NEVER send/publish a real newsletter, NEVER touch production data. Commit locally only.
+- Autonomous push to main is allowed. But STILL NEVER: deploy to prod yourself, send/publish a REAL newsletter, or touch PRODUCTION data. Autonomy is on code, not on irreversible external actions.
+- DESTRUCTIVE migrations are a hard pause: any DROP COLUMN/TABLE, NOT NULL added to an existing populated column without a default, type narrowing, or data backfill → mark item `[!]`, do NOT push, surface to Luke. Only additive/nullable migrations push autonomously.
 - Work only inside `projects/phluentlabs/`. Keep `.env`, `.devdb/`, `node_modules/` out of git.
 - Match existing patterns: tRPC routers in `trpc/routers`, drizzle schemas in `db/schemas`, UI primitives from `@/components/ui/*`. NEVER import raw `@radix-ui/*` for wrapped primitives (that was a real bug).
 - Preserve light + dark mode; don't hard-code text colors on themed elements. Coral accent `#ff5c5c` is safe on both.
