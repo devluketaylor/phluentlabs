@@ -36,6 +36,13 @@
       "when": 1788131149451,
       "tag": "0004_productive_katie_power",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788146014416,
+      "tag": "0005_lowly_doomsday",
+      "breakpoints": true
     }
   ]
 }

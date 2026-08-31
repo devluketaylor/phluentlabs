@@ -1,4 +1,4 @@
-import {pgTable, text, timestamp, unique} from "drizzle-orm/pg-core";
+import {integer, pgTable, text, timestamp, unique} from "drizzle-orm/pg-core";
 import {subscribers} from "@/db/schemas/subscribers";
 import {newsletters} from "@/db/schemas/newsletters";
 
@@ -19,6 +19,17 @@ export const newsletterRecipients = pgTable("newsletter_recipients", {
     clickedAt: timestamp("clicked_at"),
     bouncedAt: timestamp("bounced_at"),
     complainedAt: timestamp("complained_at"),
+    // Engagement counters + last-seen click URL, incremented by repeat
+    // email.opened / email.clicked webhook events (openedAt/clickedAt store the
+    // FIRST occurrence; these accumulate). Defaulted to 0 so existing rows and
+    // never-engaged recipients read as 0 rather than NULL.
+    openCount: integer("open_count").notNull().default(0),
+    clickCount: integer("click_count").notNull().default(0),
+    lastClickedUrl: text("last_clicked_url"),
+    // Idempotency guard: the id of the most recently processed Resend webhook
+    // event for this recipient. If a delivery is replayed with the same event
+    // id we skip it so counts/timestamps don't double-count.
+    lastEventId: text("last_event_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
 },
     (t) => ({
