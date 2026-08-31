@@ -1,5 +1,5 @@
 import { adminProcedure, router } from "@/trpc/server";
-import { and, count, desc, eq, gte, lt } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNotNull, lt, inArray } from "drizzle-orm";
 import { subscribers } from "@/db/schemas/subscribers";
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
@@ -150,6 +150,93 @@ export const adminDashboardRouter = router({
             },
             lastSend,
             scheduledQueue,
+        };
+    }),
+
+    // Aggregate send analytics across the most recent sent issues: overall
+    // open / click / bounce rates plus per-issue rows. Powers the dashboard
+    // "Send analytics" card. Read-only, admin-protected.
+    sendAnalytics: adminProcedure.query(async ({ ctx }) => {
+        // The most recent sent newsletters (newest first).
+        const recent = await ctx.db
+            .select({
+                id: newsletters.id,
+                slug: newsletters.slug,
+                subject: newsletters.subject,
+                sentAt: newsletters.sentAt,
+            })
+            .from(newsletters)
+            .where(eq(newsletters.status, "sent"))
+            .orderBy(desc(newsletters.sentAt))
+            .limit(10);
+
+        if (recent.length === 0) {
+            return {
+                totals: { recipients: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0 },
+                rates: { deliveryRate: 0, openRate: 0, clickRate: 0, bounceRate: 0, complaintRate: 0 },
+                issues: [] as Array<{
+                    id: string; slug: string | null; subject: string; sentAt: Date | null;
+                    recipients: number; delivered: number; opened: number; clicked: number;
+                    bounced: number; complained: number; openRate: number; clickRate: number; bounceRate: number;
+                }>,
+            };
+        }
+
+        const ids = recent.map((n) => n.id);
+        // One grouped pass over recipients for all recent issues.
+        const grouped = await ctx.db
+            .select({
+                newsletterId: newsletterRecipients.newsletterId,
+                recipients: count(),
+                delivered: count(newsletterRecipients.deliveredAt),
+                opened: count(newsletterRecipients.openedAt),
+                clicked: count(newsletterRecipients.clickedAt),
+                bounced: count(newsletterRecipients.bouncedAt),
+                complained: count(newsletterRecipients.complainedAt),
+            })
+            .from(newsletterRecipients)
+            .where(inArray(newsletterRecipients.newsletterId, ids))
+            .groupBy(newsletterRecipients.newsletterId);
+
+        const byId = new Map(grouped.map((g) => [g.newsletterId, g]));
+        const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
+
+        const totals = { recipients: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0 };
+        const issues = recent.map((n) => {
+            const g = byId.get(n.id);
+            const recipients = Number(g?.recipients ?? 0);
+            const delivered = Number(g?.delivered ?? 0);
+            const opened = Number(g?.opened ?? 0);
+            const clicked = Number(g?.clicked ?? 0);
+            const bounced = Number(g?.bounced ?? 0);
+            const complained = Number(g?.complained ?? 0);
+            totals.recipients += recipients;
+            totals.delivered += delivered;
+            totals.opened += opened;
+            totals.clicked += clicked;
+            totals.bounced += bounced;
+            totals.complained += complained;
+            const denom = delivered > 0 ? delivered : recipients;
+            return {
+                id: n.id, slug: n.slug, subject: n.subject, sentAt: n.sentAt,
+                recipients, delivered, opened, clicked, bounced, complained,
+                openRate: rate(opened, denom),
+                clickRate: rate(clicked, denom),
+                bounceRate: rate(bounced, recipients),
+            };
+        });
+
+        const denom = totals.delivered > 0 ? totals.delivered : totals.recipients;
+        return {
+            totals,
+            rates: {
+                deliveryRate: rate(totals.delivered, totals.recipients),
+                openRate: rate(totals.opened, denom),
+                clickRate: rate(totals.clicked, denom),
+                bounceRate: rate(totals.bounced, totals.recipients),
+                complaintRate: rate(totals.complained, totals.recipients),
+            },
+            issues,
         };
     }),
 });

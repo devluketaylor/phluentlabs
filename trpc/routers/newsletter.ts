@@ -12,7 +12,7 @@ function toSlug(text: string): string {
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
-import { and, arrayContains, count, desc, eq, lte } from "drizzle-orm";
+import { and, arrayContains, count, desc, eq, isNotNull, lte } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { TRPCError } from "@trpc/server";
@@ -158,6 +158,60 @@ export const adminNewsletterRouter = router({
                 const msg = e instanceof Error ? e.message : "Send failed";
                 throw new TRPCError({ code: "BAD_REQUEST", message: msg });
             }
+        }),
+
+    // Per-issue send analytics: delivery + engagement counts for one newsletter
+    // (populated by the Resend webhook handler). Read-only, admin-protected.
+    // Rates are computed against the number of recipients we actually sent.
+    analytics: adminProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .query(async ({ input, ctx }) => {
+            const [newsletter] = await ctx.db
+                .select({
+                    id: newsletters.id,
+                    slug: newsletters.slug,
+                    subject: newsletters.subject,
+                    status: newsletters.status,
+                    sentAt: newsletters.sentAt,
+                    createdAt: newsletters.createdAt,
+                })
+                .from(newsletters)
+                .where(eq(newsletters.id, input.id));
+            if (!newsletter) throw new TRPCError({ code: "NOT_FOUND", message: "Newsletter not found" });
+
+            const nid = input.id;
+            const [
+                [{ total }],
+                [{ delivered }],
+                [{ opened }],
+                [{ clicked }],
+                [{ bounced }],
+                [{ complained }],
+            ] = await Promise.all([
+                ctx.db.select({ total: count() }).from(newsletterRecipients).where(eq(newsletterRecipients.newsletterId, nid)),
+                ctx.db.select({ delivered: count() }).from(newsletterRecipients).where(and(eq(newsletterRecipients.newsletterId, nid), isNotNull(newsletterRecipients.deliveredAt))),
+                ctx.db.select({ opened: count() }).from(newsletterRecipients).where(and(eq(newsletterRecipients.newsletterId, nid), isNotNull(newsletterRecipients.openedAt))),
+                ctx.db.select({ clicked: count() }).from(newsletterRecipients).where(and(eq(newsletterRecipients.newsletterId, nid), isNotNull(newsletterRecipients.clickedAt))),
+                ctx.db.select({ bounced: count() }).from(newsletterRecipients).where(and(eq(newsletterRecipients.newsletterId, nid), isNotNull(newsletterRecipients.bouncedAt))),
+                ctx.db.select({ complained: count() }).from(newsletterRecipients).where(and(eq(newsletterRecipients.newsletterId, nid), isNotNull(newsletterRecipients.complainedAt))),
+            ]);
+
+            const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
+            // Open/click rates are conventionally measured against delivered mail
+            // (fall back to total recipients if no delivery events yet).
+            const denom = delivered > 0 ? delivered : total;
+
+            return {
+                newsletter,
+                counts: { recipients: total, delivered, opened, clicked, bounced, complained },
+                rates: {
+                    deliveryRate: rate(delivered, total),
+                    openRate: rate(opened, denom),
+                    clickRate: rate(clicked, denom),
+                    bounceRate: rate(bounced, total),
+                    complaintRate: rate(complained, total),
+                },
+            };
         }),
 
     // Resolve the send audience WITHOUT sending: returns the recipient count
