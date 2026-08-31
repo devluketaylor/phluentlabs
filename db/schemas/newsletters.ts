@@ -4,6 +4,11 @@ export const newsletters = pgTable("newsletters", {
     id: text("id").primaryKey(),
     slug: text("slug").unique(),
     subject: text("subject").notNull(),
+    // Optional A/B subject-line test: when set, the issue defines a SECOND
+    // subject variant. On send, the audience is split ~50/50 and each recipient
+    // is delivered either `subject` (variant A) or `subjectB` (variant B); the
+    // variant sent is recorded per recipient. Null = no A/B test (single subject).
+    subjectB: text("subject_b"),
     preheader: text("preheader"),
     html: text("html").notNull(),
     // SEO fields (optional): let the search title/description differ from the

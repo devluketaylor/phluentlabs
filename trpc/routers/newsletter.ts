@@ -47,6 +47,9 @@ export const adminNewsletterRouter = router({
         .input(
             z.object({
                 subject: z.string().min(1),
+                // Optional second subject line for an A/B test. When present the
+                // send splits the audience ~50/50 across the two subjects.
+                subjectB: z.string().trim().min(1).nullish(),
                 html: z.string().min(1),
                 preheader: z.string().optional(),
                 slug: z.string().optional(),
@@ -64,6 +67,7 @@ export const adminNewsletterRouter = router({
                 id,
                 slug,
                 subject: input.subject.trim(),
+                subjectB: input.subjectB?.trim() || null,
                 html: input.html,
                 preheader: input.preheader ?? null,
                 status: "draft",
@@ -77,6 +81,8 @@ export const adminNewsletterRouter = router({
             z.object({
                 id: z.string().min(1),
                 subject: z.string().min(1),
+                // Second subject variant (A/B test). null/empty clears the test.
+                subjectB: z.string().nullish(),
                 html: z.string().min(1),
                 preheader: z.string().optional(),
                 status: newsletterStatus,
@@ -123,6 +129,11 @@ export const adminNewsletterRouter = router({
                 .update(newsletters)
                 .set({
                     subject: input.subject.trim(),
+                    // Only write subjectB when the field was sent; an empty/blank
+                    // string clears the A/B test back to a single-subject issue.
+                    ...(input.subjectB !== undefined
+                        ? { subjectB: input.subjectB?.trim() || null }
+                        : {}),
                     html: input.html,
                     preheader: input.preheader ?? null,
                     status: input.status,
@@ -171,6 +182,7 @@ export const adminNewsletterRouter = router({
                     id: newsletters.id,
                     slug: newsletters.slug,
                     subject: newsletters.subject,
+                    subjectB: newsletters.subjectB,
                     status: newsletters.status,
                     sentAt: newsletters.sentAt,
                     createdAt: newsletters.createdAt,
@@ -201,6 +213,74 @@ export const adminNewsletterRouter = router({
             // (fall back to total recipients if no delivery events yet).
             const denom = delivered > 0 ? delivered : total;
 
+            // A/B subject-line test breakdown: when the issue was sent with two
+            // subject variants, report per-variant recipients/delivered/opened/
+            // clicked so we can surface which subject won. Winner-reporting is fed
+            // by the same open/click tracking the Resend webhook records; before
+            // any engagement arrives the counts are simply zero and winner is null.
+            let abTest:
+                | null
+                | {
+                      variants: Array<{
+                          variant: "A" | "B";
+                          subject: string;
+                          recipients: number;
+                          delivered: number;
+                          opened: number;
+                          clicked: number;
+                          openRate: number;
+                          clickRate: number;
+                      }>;
+                      winner: "A" | "B" | "tie" | null;
+                  } = null;
+
+            if (newsletter.subjectB?.trim()) {
+                const variantKeys: Array<{ variant: "A" | "B"; subject: string }> = [
+                    { variant: "A", subject: newsletter.subject },
+                    { variant: "B", subject: newsletter.subjectB.trim() },
+                ];
+                const variants = await Promise.all(
+                    variantKeys.map(async ({ variant, subject }) => {
+                        const vWhere = and(
+                            eq(newsletterRecipients.newsletterId, nid),
+                            eq(newsletterRecipients.subjectVariant, variant),
+                        );
+                        const [
+                            [{ vr }],
+                            [{ vd }],
+                            [{ vo }],
+                            [{ vc }],
+                        ] = await Promise.all([
+                            ctx.db.select({ vr: count() }).from(newsletterRecipients).where(vWhere),
+                            ctx.db.select({ vd: count() }).from(newsletterRecipients).where(and(vWhere, isNotNull(newsletterRecipients.deliveredAt))),
+                            ctx.db.select({ vo: count() }).from(newsletterRecipients).where(and(vWhere, isNotNull(newsletterRecipients.openedAt))),
+                            ctx.db.select({ vc: count() }).from(newsletterRecipients).where(and(vWhere, isNotNull(newsletterRecipients.clickedAt))),
+                        ]);
+                        const vDenom = vd > 0 ? vd : vr;
+                        return {
+                            variant,
+                            subject,
+                            recipients: vr,
+                            delivered: vd,
+                            opened: vo,
+                            clicked: vc,
+                            openRate: rate(vo, vDenom),
+                            clickRate: rate(vc, vDenom),
+                        };
+                    }),
+                );
+
+                // Winner = higher open rate (subject lines drive opens). Only
+                // declare a winner once at least one variant has recorded opens;
+                // otherwise there isn't enough signal yet.
+                const [a, b] = variants;
+                let winner: "A" | "B" | "tie" | null = null;
+                if (a.opened > 0 || b.opened > 0) {
+                    winner = a.openRate > b.openRate ? "A" : b.openRate > a.openRate ? "B" : "tie";
+                }
+                abTest = { variants, winner };
+            }
+
             return {
                 newsletter,
                 counts: { recipients: total, delivered, opened, clicked, bounced, complained },
@@ -211,6 +291,7 @@ export const adminNewsletterRouter = router({
                     bounceRate: rate(bounced, total),
                     complaintRate: rate(complained, total),
                 },
+                abTest,
             };
         }),
 

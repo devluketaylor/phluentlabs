@@ -15,6 +15,8 @@ import {
     ShieldAlert,
     Users,
     ExternalLink,
+    FlaskConical,
+    Trophy,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -69,6 +71,7 @@ export default function NewsletterAnalyticsPage() {
     const n = data?.newsletter;
     const c = data?.counts;
     const r = data?.rates;
+    const ab = data?.abTest;
 
     return (
         <div className="max-w-4xl mx-auto pt-8 pb-16 px-4 space-y-6">
@@ -213,6 +216,68 @@ export default function NewsletterAnalyticsPage() {
                     )}
                 </CardContent>
             </Card>
+
+            {/* A/B subject-line test breakdown (only for issues sent with two subjects) */}
+            {ab && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                            <FlaskConical className="size-4 text-primary" />
+                            A/B subject test
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        {ab.variants.map((v) => {
+                            const isWinner = ab.winner === v.variant;
+                            return (
+                                <div
+                                    key={v.variant}
+                                    className={`rounded-lg border p-3 ${isWinner ? "border-[#ff5c5c] bg-[#ff5c5c]/5" : ""}`}
+                                >
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                                                <span>Variant {v.variant}</span>
+                                                {isWinner && (
+                                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#ff5c5c]/15 px-2 py-0.5 text-[#ff5c5c]">
+                                                        <Trophy className="size-3" /> Winner
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="truncate text-sm font-medium mt-0.5">{v.subject}</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
+                                        <div>
+                                            <p className="text-xs text-muted-foreground">Recipients</p>
+                                            <p className="font-medium">{v.recipients.toLocaleString()}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-muted-foreground">Delivered</p>
+                                            <p className="font-medium">{v.delivered.toLocaleString()}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-muted-foreground">Open rate</p>
+                                            <p className="font-medium">{v.openRate}% <span className="text-xs text-muted-foreground font-normal">({v.opened})</span></p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-muted-foreground">Click rate</p>
+                                            <p className="font-medium">{v.clickRate}% <span className="text-xs text-muted-foreground font-normal">({v.clicked})</span></p>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <p className="text-xs text-muted-foreground">
+                            {ab.winner === null
+                                ? "Winner is decided by open rate once opens start rolling in."
+                                : ab.winner === "tie"
+                                  ? "Both variants are tied on open rate so far."
+                                  : `Variant ${ab.winner} is leading on open rate.`}
+                        </p>
+                    </CardContent>
+                </Card>
+            )}
 
             <p className="text-xs text-muted-foreground">
                 Open &amp; click rates are measured against delivered mail. Numbers

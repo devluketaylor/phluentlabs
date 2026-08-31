@@ -7,6 +7,11 @@ export const newsletterRecipients = pgTable("newsletter_recipients", {
     newsletterId: text("newsletter_id").notNull().references(() => newsletters.id, { onDelete: "cascade"}),
     subscriberId: text("subscriber_id").notNull().references(() => subscribers.id, { onDelete: "cascade" }),
     status: text("status").notNull().default("queued"),
+    // A/B subject-line test: which subject variant this recipient was sent —
+    // "A" (newsletters.subject) or "B" (newsletters.subjectB). Null for issues
+    // sent without an A/B test (single subject line). Used to attribute
+    // open/click engagement back to the winning subject variant.
+    subjectVariant: text("subject_variant"),
     error: text("error"),
     sentAt: timestamp("sent_at"),
     // Resend's per-email id (from batch.send data[].id), used to correlate

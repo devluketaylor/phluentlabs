@@ -43,6 +43,13 @@
       "when": 1788146014416,
       "tag": "0005_lowly_doomsday",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788163460865,
+      "tag": "0006_tiny_oracle",
+      "breakpoints": true
     }
   ]
 }

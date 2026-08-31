@@ -571,6 +571,7 @@ function EditNewsletterDialog({
         id: string;
         slug: string | null;
         subject: string;
+        subjectB?: string | null;
         preheader: string | null;
         html: string;
         status: string;
@@ -578,6 +579,7 @@ function EditNewsletterDialog({
     onSave: (data: {
         id: string;
         subject: string;
+        subjectB?: string | null;
         html: string;
         preheader?: string;
         status: NewsletterStatus;
@@ -587,14 +589,17 @@ function EditNewsletterDialog({
 }) {
     const [open, setOpen] = useState(false);
     const [subject, setSubject] = useState(newsletter.subject);
+    const [subjectB, setSubjectB] = useState(newsletter.subjectB ?? "");
     const [slug, setSlug] = useState(newsletter.slug ?? "");
     const [preheader, setPreheader] = useState(newsletter.preheader ?? "");
     const [html, setHtml] = useState(newsletter.html);
     const [status, setStatus] = useState<NewsletterStatus>(newsletter.status as NewsletterStatus);
+    const isSent = newsletter.status === "sent";
 
     useEffect(() => {
         if (!open) return;
         setSubject(newsletter.subject);
+        setSubjectB(newsletter.subjectB ?? "");
         setSlug(newsletter.slug ?? "");
         setPreheader(newsletter.preheader ?? "");
         setHtml(newsletter.html);
@@ -638,6 +643,25 @@ function EditNewsletterDialog({
                     </div>
 
                     <div className="space-y-2">
+                        <div className="text-sm font-medium">
+                            Subject B <span className="text-muted-foreground font-normal">(optional — A/B test)</span>
+                        </div>
+                        <Input
+                            value={subjectB}
+                            onChange={(e) => setSubjectB(e.target.value)}
+                            placeholder="Alternate subject line to test against"
+                            disabled={isSent}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                            {isSent
+                                ? "This issue has already been sent — the A/B split is locked in."
+                                : subjectB.trim()
+                                  ? "On send, the audience splits ~50/50 between Subject and Subject B. The winning variant shows in analytics after opens roll in."
+                                  : "Leave blank for a single subject line. Add one to run an A/B subject-line test."}
+                        </p>
+                    </div>
+
+                    <div className="space-y-2">
                         <div className="text-sm font-medium">Slug</div>
                         <Input
                             value={slug}
@@ -675,6 +699,7 @@ function EditNewsletterDialog({
                                 onSave({
                                     id: newsletter.id,
                                     subject,
+                                    subjectB: subjectB.trim() || null,
                                     html,
                                     preheader: preheader.trim() || undefined,
                                     status,

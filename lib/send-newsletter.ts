@@ -5,6 +5,7 @@ import { subscribers } from "@/db/schemas/subscribers";
 import { and, arrayContains, eq } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
+import { assignVariant } from "@/lib/ab-split";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -70,8 +71,22 @@ export async function sendNewsletterToSubscribers(
         // So tracking is enabled by Luke in the Resend dashboard on the sending
         // domain; once on, Resend emits email.opened / email.clicked webhooks
         // that our /api/webhooks/resend handler records. Nothing to set here.
+        // A/B subject-line test: when the issue defines a second subject variant,
+        // each recipient is deterministically bucketed into "A" (newsletter.subject)
+        // or "B" (newsletter.subjectB) so the audience splits ~50/50. The variant
+        // sent is recorded per recipient so engagement can be attributed to the
+        // winning subject. When there's no subjectB, everyone gets variant A and
+        // the recorded variant is left null (single-subject send).
+        const isAbTest = !!newsletter.subjectB?.trim();
+
+        const perRecipient = batch.map((sub) => {
+            const variant = isAbTest ? assignVariant(newsletter.id, sub.id) : "A";
+            const subject = variant === "B" ? newsletter.subjectB!.trim() : newsletter.subject;
+            return { sub, variant, subject };
+        });
+
         const emails = await Promise.all(
-            batch.map(async (sub) => {
+            perRecipient.map(async ({ sub, subject }) => {
                 const unsubToken = await signSubscriberToken({ subId: sub.id, email: sub.email, scope: "unsub" });
                 const unsubUrl = new URL("/unsubscribe", appUrl);
                 unsubUrl.searchParams.set("token", unsubToken);
@@ -83,7 +98,7 @@ export async function sendNewsletterToSubscribers(
                 return {
                     from: fromEmail,
                     to: sub.email,
-                    subject: newsletter.subject,
+                    subject,
                     html,
                 };
             })
@@ -98,13 +113,16 @@ export async function sendNewsletterToSubscribers(
         const sentIds = sendResult.data?.data ?? [];
 
         await db.insert(newsletterRecipients).values(
-            batch.map((sub, idx) => ({
+            perRecipient.map(({ sub, variant }, idx) => ({
                 id: crypto.randomUUID(),
                 newsletterId: newsletter.id,
                 subscriberId: sub.id,
                 status: "sent",
                 sentAt: new Date(),
                 resendId: sentIds[idx]?.id ?? null,
+                // Only record the variant for real A/B tests; single-subject
+                // sends leave it null.
+                subjectVariant: isAbTest ? variant : null,
             }))
         ).onConflictDoNothing();
     }
