@@ -144,6 +144,45 @@ export const subscribeRouter = router({
                 return { ok: true };
             }),
 
+        // Public but token-gated: return the CALLER'S OWN referral code + how
+        // many people they've referred. The signed confirm token proves the
+        // caller owns this subscriber row, so we never expose anyone else's
+        // data — only the subscriber identified by the token. Powers the
+        // "your referral link" surface shown after a successful confirm.
+        myReferral: publicProcedure
+            .input(z.object({ token: z.string().min(1) }))
+            .query(async ({ input, ctx }) => {
+                const payload = await verifySubscriberToken(input.token);
+                if (payload.scope !== "confirm") throw new Error("Invalid token")
+
+                const [me] = await ctx.db
+                    .select({
+                        id: subscribers.id,
+                        referralCode: subscribers.referralCode,
+                    })
+                    .from(subscribers)
+                    .where(eq(subscribers.id, payload.subId));
+                if (!me) throw new Error("Subscriber not found");
+
+                // Backfill a code for legacy rows that predate the referral
+                // program (they were created before referralCode existed).
+                let referralCode = me.referralCode;
+                if (!referralCode) {
+                    referralCode = await makeUniqueReferralCode(ctx.db);
+                    await ctx.db
+                        .update(subscribers)
+                        .set({ referralCode })
+                        .where(eq(subscribers.id, me.id));
+                }
+
+                const [{ referred }] = await ctx.db
+                    .select({ referred: count() })
+                    .from(subscribers)
+                    .where(eq(subscribers.referredBy, me.id));
+
+                return { referralCode, referralCount: referred };
+            }),
+
         unsubscribe: publicProcedure
             .input(z.object({ token: z.string().min(1) }))
             .mutation(async ({ input, ctx }) => {
