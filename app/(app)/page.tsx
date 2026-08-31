@@ -206,6 +206,12 @@ function HomePageInner() {
             <section className="pb-16">
                 <div className="flex items-baseline justify-between mb-6">
                     <h2 className="text-lg font-semibold">Past issues</h2>
+                    <a
+                        href="/issues"
+                        className="text-sm text-muted-foreground transition-colors hover:text-primary"
+                    >
+                        View all &rarr;
+                    </a>
                 </div>
                 <NewsletterList />
             </section>

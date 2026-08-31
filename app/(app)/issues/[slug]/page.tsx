@@ -142,7 +142,7 @@ export default async function IssuePage({ params }: Props) {
             />
 
             <Link
-                href="/"
+                href="/issues"
                 className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-8"
             >
                 <ArrowLeft className="w-4 h-4" />
