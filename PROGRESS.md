@@ -7,7 +7,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ---
 
 ## Now (active focus)
-- [~] Tier 4: **Tags / segments DONE** (`340a665`, schema change — hold for review) → **Segmented send DONE** (`f73e42d`, local, NO schema change) → **Referral program DONE** (`a641630`, additive schema — hold for review) → **Welcome email automation DONE** (`6509f98`, local, NO schema change) → **Embeddable subscribe widget + custom landing DONE** (`f3f48ad`, local, NO schema change) → **A/B subject-line testing DONE** (`8a30bd2`, local, additive schema — hold for review). **Public issue archive / SEO polish DONE** (`5c71ba2`, local, NO schema change). **Subscriber preferences center DONE** (`1c0effe`, local, NO schema change). **Tier 4 roadmap fully complete.**
+- [x] Tier 4: **Tags / segments DONE** (`340a665`, schema change — hold for review) → **Segmented send DONE** (`f73e42d`, local, NO schema change) → **Referral program DONE** (`a641630`, additive schema — hold for review) → **Welcome email automation DONE** (`6509f98`, local, NO schema change) → **Embeddable subscribe widget + custom landing DONE** (`f3f48ad`, local, NO schema change) → **A/B subject-line testing DONE** (`8a30bd2`, local, additive schema — hold for review). **Public issue archive / SEO polish DONE** (`5c71ba2`, local, NO schema change). **Subscriber preferences center DONE** (`1c0effe`, local, NO schema change). **Tier 4 roadmap fully complete.**
 - [x] Tier 3: Send analytics (opens/clicks/bounces) via Resend webhooks — **DONE** (`070549f`→`0f583b5`, 2026-08-30). Full open+click tracking, svix-verified webhook handler, per-issue detail page + dashboard aggregate. Luke made all product calls. See Log for setup steps he must do in Resend + Vercel.
 
 ## Workflow
@@ -61,6 +61,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 
 ## Log (newest first)
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
+
+### 2026-08-31 (12:03pm) — ROADMAP COMPLETE — no build (board-consistency doc fix only)
+- **No feature this run: the entire roadmap (Tiers 1–4) is done.** Env verified up (PG :5433 + Next :3000 both listening, `git status` clean, HEAD `1bf1d67`), baseline `npx tsc --noEmit` exit 0. Grep confirms **zero `[ ]` todo and zero `[!]` blocked items** anywhere on the board. Every Tier 4 child (tags/segments, segmented send, referral, welcome email, embeddable widget, A/B testing, public archive, preferences center) is `[x]`.
+- **Doc-only fix:** the rolled-up Tier-4 line in `Now (active focus)` was still `[~]` even though its text already read "Tier 4 roadmap fully complete" and all children shipped — flipped it to `[x]` for board honesty. No code touched.
+- Per DEV_AGENT.md ("If the roadmap is fully done: say so and suggest next ideas — don't invent scope"), I built nothing new. **Next-idea candidates for Luke to seed a Tier 5 (NOT self-started):** (a) scheduled-send worker/queue reliability audit + retries; (b) admin audit log (who changed what/when); (c) SPF/DKIM/DMARC deliverability checklist + inbox-placement docs; (d) subscriber import from Substack/beehiiv/Mailchimp exports; (e) API keys + a public subscribe API for external integrations; (f) reward-tier milestones on the referral program (deferred earlier as a product call); (g) team/multi-admin roles & permissions; (h) per-issue web analytics (views on the public archive).
 
 ### 2026-08-31 (9:02am) — TIER 4 ITEM 8 (FINAL): Subscriber preferences center ✅ — Tier 4 roadmap COMPLETE
 - **Built the eighth/final Tier 4 item: subscriber preferences center.** Commit **`1c0effe`**, local only. `npx tsc --noEmit` exit 0. **NO schema change** — reuses the existing signed-token pattern and the free-form `status` text column.
