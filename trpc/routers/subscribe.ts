@@ -7,6 +7,7 @@ import {generateReferralCode} from "@/lib/referral";
 import type {db as Db} from "@/db/client";
 import {Resend} from "resend";
 import {renderConfirmEmail} from "@/lib/emails/confirm-email";
+import {renderWelcomeEmail} from "@/lib/emails/welcome-email";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -31,6 +32,26 @@ export const sendConfirmEmail = async (
     unsubscribeUrl?: string,
 ) => {
     const {subject, html, text} = renderConfirmEmail({confirmUrl, unsubscribeUrl});
+    await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
+        to,
+        subject,
+        html,
+        text,
+    });
+}
+
+/**
+ * Sends the branded welcome email once, right after a subscriber confirms.
+ * Fire-and-forget from the caller's perspective (errors are swallowed so a
+ * transient Resend hiccup never fails the confirm flow — the subscriber is
+ * already confirmed at that point).
+ */
+export const sendWelcomeEmail = async (
+    to: string,
+    opts: {firstName?: string | null; shareUrl?: string; unsubscribeUrl?: string},
+) => {
+    const {subject, html, text} = renderWelcomeEmail(opts);
     await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
         to,
@@ -136,10 +157,62 @@ export const subscribeRouter = router({
                 const payload = await verifySubscriberToken(input.token);
                 if (payload.scope !== "confirm") throw new Error("Invalid token")
 
+                // Load the row first so we can tell a first-time confirm from a
+                // repeat click on the confirm link (which shouldn't re-send the
+                // welcome email).
+                const [existing] = await ctx.db
+                    .select({
+                        id: subscribers.id,
+                        email: subscribers.email,
+                        firstName: subscribers.firstName,
+                        status: subscribers.status,
+                        referralCode: subscribers.referralCode,
+                    })
+                    .from(subscribers)
+                    .where(eq(subscribers.id, payload.subId));
+
                 await ctx.db
                     .update(subscribers)
                     .set({ status: "subscribed", confirmedAt: new Date() })
                     .where(eq(subscribers.id, payload.subId))
+
+                // Welcome email automation (Kit-style): send the branded welcome
+                // email ONCE, only on the pending -> subscribed transition. Skip
+                // if they were already subscribed (repeat confirm click) so we
+                // never double-send. Fire-and-forget: a Resend hiccup must not
+                // fail the confirm — they're already confirmed in the DB.
+                if (existing && existing.status !== "subscribed") {
+                    try {
+                        const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+                        const shareUrl = existing.referralCode && appUrl
+                            ? (() => {
+                                const u = new URL("/", appUrl);
+                                u.searchParams.set("ref", existing.referralCode!);
+                                return u.toString();
+                            })()
+                            : undefined;
+
+                        let unsubscribeUrl: string | undefined;
+                        if (appUrl) {
+                            const unsubToken = await signSubscriberToken({
+                                subId: existing.id,
+                                email: existing.email,
+                                scope: "unsub",
+                            });
+                            const u = new URL("/unsubscribe", appUrl);
+                            u.searchParams.set("token", unsubToken);
+                            unsubscribeUrl = u.toString();
+                        }
+
+                        await sendWelcomeEmail(existing.email, {
+                            firstName: existing.firstName,
+                            shareUrl,
+                            unsubscribeUrl,
+                        });
+                    } catch (err) {
+                        console.error("welcome email send failed", err);
+                    }
+                }
 
                 return { ok: true };
             }),
