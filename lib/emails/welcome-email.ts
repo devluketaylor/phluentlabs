@@ -27,7 +27,7 @@ export function renderWelcomeEmail(opts: {
     const sharePart = shareUrl
         ? `
         <p style="margin:24px 0 8px 0;">Know someone who'd enjoy it too? Share your personal link — we keep track of everyone you bring in:</p>
-        <p style="margin:0 0 4px 0;font-size:13px;word-break:break-all;"><a href="${shareUrl}" style="color:#ff5c5c;text-decoration:underline;">${shareUrl}</a></p>`
+        <p style="margin:0 0 4px 0;font-size:13px;word-break:break-all;"><a class="email-link" href="${shareUrl}" style="color:#ff5c5c;text-decoration:underline;">${shareUrl}</a></p>`
         : "";
 
     const body = `
@@ -35,7 +35,7 @@ export function renderWelcomeEmail(opts: {
         <p style="margin:0 0 16px 0;">Your subscription to <strong>${BRAND_NAME}</strong> is confirmed — welcome aboard! 🎉</p>
         <p style="margin:0 0 8px 0;">You'll now get our newsletter delivered straight to your inbox. Expect sharp, practical insights with no fluff. We're glad you're here.</p>
         ${sharePart}
-        <p style="margin:24px 0 0 0;font-size:14px;color:#71717a;">In the meantime, keep an eye on your inbox — the next issue is on its way.</p>
+        <p class="email-muted" style="margin:24px 0 0 0;font-size:14px;color:#71717a;">In the meantime, keep an eye on your inbox — the next issue is on its way.</p>
     `;
 
     const footer = unsubscribeUrl

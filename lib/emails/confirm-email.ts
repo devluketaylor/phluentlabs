@@ -17,9 +17,9 @@ export function renderConfirmEmail(opts: {
         <p style="margin:0 0 16px 0;">Welcome to <strong>${BRAND_NAME}</strong> 👋</p>
         <p style="margin:0 0 8px 0;">Thanks for subscribing! Just one quick step: tap the button below to confirm your email address and start receiving our newsletter.</p>
         ${renderButton(confirmUrl, "Confirm subscription")}
-        <p style="margin:16px 0 8px 0;font-size:14px;color:#71717a;">If the button doesn't work, copy and paste this link into your browser:</p>
-        <p style="margin:0 0 16px 0;font-size:13px;word-break:break-all;"><a href="${confirmUrl}" style="color:#ff5c5c;text-decoration:underline;">${confirmUrl}</a></p>
-        <p style="margin:16px 0 0 0;font-size:14px;color:#71717a;">If you didn't request this, you can safely ignore this email — no subscription will be created.</p>
+        <p class="email-muted" style="margin:16px 0 8px 0;font-size:14px;color:#71717a;">If the button doesn't work, copy and paste this link into your browser:</p>
+        <p style="margin:0 0 16px 0;font-size:13px;word-break:break-all;"><a class="email-link" href="${confirmUrl}" style="color:#ff5c5c;text-decoration:underline;">${confirmUrl}</a></p>
+        <p class="email-muted" style="margin:16px 0 0 0;font-size:14px;color:#71717a;">If you didn't request this, you can safely ignore this email — no subscription will be created.</p>
     `;
 
     const footer = unsubscribeUrl
