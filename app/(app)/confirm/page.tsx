@@ -6,6 +6,7 @@ import {trpc} from "@/trpc/client";
 import {useEffect} from "react";
 import {FormHeader} from "@/components/header";
 import {Check, Inbox, XIcon} from "lucide-react";
+import {ReferralShare} from "@/components/referral-share";
 
 function ConfirmContent() {
     const params = useSearchParams();
@@ -21,7 +22,14 @@ function ConfirmContent() {
     if (!token) return <div className={"mx-auto flex justify-center pt-12"}><FormHeader icon={<Inbox />} title={"Confirm you email"} description={"Check you inbox and verify your email."} /></div>
     if (confirm.isPending) return <p className={"text-center pt-12"}>Confirming...</p>
     if (confirm.isError) return <div className={"mx-auto flex justify-center pt-12"}><FormHeader icon={<XIcon/>} title={"Invalid or expired link"} description={"This link has expired, try subscribing again."} /></div>
-    return <div className={"mx-auto flex justify-center pt-12"}><FormHeader icon={<Check />} title={"Success you're verified"} description={"You will now recieve our weekly newsletter!"} /></div>
+    return (
+        <div className={"mx-auto flex flex-col items-center pt-12 px-4 w-full max-w-md"}>
+            <FormHeader icon={<Check />} title={"Success you're verified"} description={"You will now recieve our weekly newsletter!"} />
+            {/* Now that they're confirmed, surface their personal referral link
+                + count. The confirm token proves ownership of this row. */}
+            <ReferralShare token={token} />
+        </div>
+    )
 }
 
 export default function ConfirmPage() {
