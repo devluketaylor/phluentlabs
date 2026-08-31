@@ -63,6 +63,13 @@ export async function sendNewsletterToSubscribers(
     for (let i = 0; i < allSubscribers.length; i += BATCH_SIZE) {
         const batch = allSubscribers.slice(i, i + BATCH_SIZE);
 
+        // NOTE on open/click tracking: Resend controls open-tracking (pixel)
+        // and click-tracking (link rewriting) at the DOMAIN level, not per send
+        // — the batch/email send payload (CreateEmailOptions) has no per-message
+        // tracking flag (only Domains.update takes openTracking/clickTracking).
+        // So tracking is enabled by Luke in the Resend dashboard on the sending
+        // domain; once on, Resend emits email.opened / email.clicked webhooks
+        // that our /api/webhooks/resend handler records. Nothing to set here.
         const emails = await Promise.all(
             batch.map(async (sub) => {
                 const unsubToken = await signSubscriberToken({ subId: sub.id, email: sub.email, scope: "unsub" });
