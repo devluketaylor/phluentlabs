@@ -59,19 +59,31 @@ export default async function Image({ params }: Props) {
                     fontFamily: "sans-serif",
                 }}
             >
-                {/* Small kicker label — keeps a light brand cue without competing
-                    with the title. The issue TITLE is the star of the card. */}
-                <div
-                    style={{
-                        display: "flex",
-                        color: "#ff5c5c",
-                        fontSize: 22,
-                        fontWeight: 600,
-                        textTransform: "uppercase",
-                        letterSpacing: "3px",
-                    }}
-                >
-                    phluent weekly
+                {/* Brand header at top: PhluentLabs wordmark + tagline. The big
+                    per-issue TITLE below stays the focus (dynamic per newsletter). */}
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div
+                        style={{
+                            color: "#ff5c5c",
+                            fontSize: 30,
+                            fontWeight: 700,
+                            letterSpacing: "-0.5px",
+                        }}
+                    >
+                        Phluent
+                    </div>
+                    <div style={{ color: "#ffffff", fontSize: 30, fontWeight: 700 }}>Labs</div>
+                    <div
+                        style={{
+                            color: "#888",
+                            fontSize: 20,
+                            marginLeft: "10px",
+                            textTransform: "uppercase",
+                            letterSpacing: "2px",
+                        }}
+                    >
+                        weekly · for developers
+                    </div>
                 </div>
 
                 <div
