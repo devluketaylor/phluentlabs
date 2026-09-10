@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import { IssueShare } from "@/components/issue-share";
 import { IssueSubscribeCta } from "@/components/issue-subscribe-cta";
+import { PageViewBeacon } from "@/components/page-view-beacon";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -217,6 +218,10 @@ export default async function IssuePage({ params }: Props) {
 
                 <IssueShare url={canonical} title={issue.subject} />
             </article>
+
+            {/* Records a web page-view (distinct from email opens). Fire-and-forget,
+                bot-filtered + deduped per session server/client-side. */}
+            <PageViewBeacon slug={issue.slug ?? issue.id} />
 
             <IssueNav slug={issue.slug} sentAt={issue.sentAt} createdAt={issue.createdAt} />
 

@@ -3,6 +3,7 @@ import { and, count, desc, eq, gte, isNotNull, lt, inArray } from "drizzle-orm";
 import { subscribers } from "@/db/schemas/subscribers";
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
+import { pageViews } from "@/db/schemas/page-views";
 
 export const adminDashboardRouter = router({
     // One query powering the admin dashboard: headline counts, status
@@ -172,12 +173,12 @@ export const adminDashboardRouter = router({
 
         if (recent.length === 0) {
             return {
-                totals: { recipients: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0 },
+                totals: { recipients: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0, webViews: 0 },
                 rates: { deliveryRate: 0, openRate: 0, clickRate: 0, bounceRate: 0, complaintRate: 0 },
                 issues: [] as Array<{
                     id: string; slug: string | null; subject: string; sentAt: Date | null;
                     recipients: number; delivered: number; opened: number; clicked: number;
-                    bounced: number; complained: number; openRate: number; clickRate: number; bounceRate: number;
+                    bounced: number; complained: number; webViews: number; openRate: number; clickRate: number; bounceRate: number;
                 }>,
             };
         }
@@ -198,10 +199,21 @@ export const adminDashboardRouter = router({
             .where(inArray(newsletterRecipients.newsletterId, ids))
             .groupBy(newsletterRecipients.newsletterId);
 
+        // Public web page-views for the same recent issues, grouped per issue.
+        const viewsGrouped = await ctx.db
+            .select({
+                newsletterId: pageViews.newsletterId,
+                views: count(),
+            })
+            .from(pageViews)
+            .where(inArray(pageViews.newsletterId, ids))
+            .groupBy(pageViews.newsletterId);
+        const viewsById = new Map(viewsGrouped.map((v) => [v.newsletterId, Number(v.views)]));
+
         const byId = new Map(grouped.map((g) => [g.newsletterId, g]));
         const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
 
-        const totals = { recipients: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0 };
+        const totals = { recipients: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, complained: 0, webViews: 0 };
         const issues = recent.map((n) => {
             const g = byId.get(n.id);
             const recipients = Number(g?.recipients ?? 0);
@@ -210,6 +222,8 @@ export const adminDashboardRouter = router({
             const clicked = Number(g?.clicked ?? 0);
             const bounced = Number(g?.bounced ?? 0);
             const complained = Number(g?.complained ?? 0);
+            const webViews = viewsById.get(n.id) ?? 0;
+            totals.webViews += webViews;
             totals.recipients += recipients;
             totals.delivered += delivered;
             totals.opened += opened;
@@ -219,7 +233,7 @@ export const adminDashboardRouter = router({
             const denom = delivered > 0 ? delivered : recipients;
             return {
                 id: n.id, slug: n.slug, subject: n.subject, sentAt: n.sentAt,
-                recipients, delivered, opened, clicked, bounced, complained,
+                recipients, delivered, opened, clicked, bounced, complained, webViews,
                 openRate: rate(opened, denom),
                 clickRate: rate(clicked, denom),
                 bounceRate: rate(bounced, recipients),

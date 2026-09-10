@@ -17,6 +17,7 @@ import {
     MousePointerClick,
     AlertTriangle,
     BarChart3,
+    Eye,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -301,7 +302,7 @@ export default function DashboardPage() {
                         </p>
                     ) : (
                         <>
-                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                                 <div className="rounded-md border p-3">
                                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                         <Send className="size-3.5" /> Delivered
@@ -347,6 +348,17 @@ export default function DashboardPage() {
                                         {analytics.data.totals.bounced.toLocaleString()} bounced
                                     </p>
                                 </div>
+                                <div className="rounded-md border p-3">
+                                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                        <Eye className="size-3.5" /> Web views
+                                    </div>
+                                    <p className="mt-1 text-xl font-semibold">
+                                        {analytics.data.totals.webViews.toLocaleString()}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                        archive page reads
+                                    </p>
+                                </div>
                             </div>
 
                             <ul className="divide-y">
@@ -365,6 +377,10 @@ export default function DashboardPage() {
                                             <span>{iss.openRate}% open</span>
                                             <span>{iss.clickRate}% click</span>
                                             <span>{iss.recipients.toLocaleString()} sent</span>
+                                            <span className="inline-flex items-center gap-1">
+                                                <Eye className="size-3" />
+                                                {iss.webViews.toLocaleString()}
+                                            </span>
                                         </div>
                                     </li>
                                 ))}

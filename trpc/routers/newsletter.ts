@@ -12,6 +12,7 @@ function toSlug(text: string): string {
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
+import { pageViews } from "@/db/schemas/page-views";
 import { and, arrayContains, count, desc, eq, isNotNull, lte } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
@@ -232,6 +233,22 @@ export const adminNewsletterRouter = router({
                 ctx.db.select({ complained: count() }).from(newsletterRecipients).where(and(eq(newsletterRecipients.newsletterId, nid), isNotNull(newsletterRecipients.complainedAt))),
             ]);
 
+            // Public web page-views for this issue's archive page (distinct from
+            // email opens above). Total + a coarse traffic-source breakdown.
+            const [[{ webViews }], viewsByBucket] = await Promise.all([
+                ctx.db.select({ webViews: count() }).from(pageViews).where(eq(pageViews.newsletterId, nid)),
+                ctx.db
+                    .select({ bucket: pageViews.referrerBucket, c: count() })
+                    .from(pageViews)
+                    .where(eq(pageViews.newsletterId, nid))
+                    .groupBy(pageViews.referrerBucket)
+                    .orderBy(desc(count())),
+            ]);
+            const referrers = viewsByBucket.map((v) => ({
+                bucket: v.bucket ?? "other",
+                views: Number(v.c),
+            }));
+
             const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
             // Open/click rates are conventionally measured against delivered mail
             // (fall back to total recipients if no delivery events yet).
@@ -308,6 +325,7 @@ export const adminNewsletterRouter = router({
             return {
                 newsletter,
                 counts: { recipients: total, delivered, opened, clicked, bounced, complained },
+                web: { views: Number(webViews), referrers },
                 rates: {
                     deliveryRate: rate(delivered, total),
                     openRate: rate(opened, denom),

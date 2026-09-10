@@ -17,6 +17,8 @@ import {
     ExternalLink,
     FlaskConical,
     Trophy,
+    Eye,
+    Globe,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -72,6 +74,15 @@ export default function NewsletterAnalyticsPage() {
     const c = data?.counts;
     const r = data?.rates;
     const ab = data?.abTest;
+    const web = data?.web;
+
+    const bucketLabels: Record<string, string> = {
+        search: "Search",
+        social: "Social",
+        direct: "Direct",
+        internal: "Internal",
+        other: "Other",
+    };
 
     return (
         <div className="max-w-4xl mx-auto pt-8 pb-16 px-4 space-y-6">
@@ -181,6 +192,59 @@ export default function NewsletterAnalyticsPage() {
                     </>
                 )}
             </div>
+
+            {/* Public web analytics — reads of the /issues page on the website,
+                distinct from the email open/click metrics above. */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <Globe className="size-4 text-primary" />
+                        Web views
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {isLoading || !web ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-8 w-24" />
+                            <Skeleton className="h-4 w-full" />
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2">
+                                <Eye className="size-6 text-primary" />
+                                <span className="text-2xl font-semibold">
+                                    {web.views.toLocaleString()}
+                                </span>
+                                <span className="text-sm text-muted-foreground">
+                                    page {web.views === 1 ? "view" : "views"} on the archive
+                                </span>
+                            </div>
+                            {web.referrers.length > 0 ? (
+                                <div>
+                                    <p className="text-xs text-muted-foreground mb-2">Traffic source</p>
+                                    <ul className="divide-y text-sm">
+                                        {web.referrers.map((rf) => (
+                                            <li
+                                                key={rf.bucket}
+                                                className="flex items-center justify-between py-2"
+                                            >
+                                                <span>{bucketLabels[rf.bucket] ?? rf.bucket}</span>
+                                                <span className="font-medium">
+                                                    {rf.views.toLocaleString()}
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">
+                                    No web views recorded yet.
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
 
             {/* Detail breakdown */}
             <Card>
