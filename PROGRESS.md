@@ -75,8 +75,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ## Log (newest first)
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
 
-### 2026-09-10 (12:40am) — Tier 5 #1: Admin audit log ✅ (commit `77c7a3b`)
-- **Built the append-only admin audit trail** (Tier 5 item #1). Commit `77c7a3b`, `npx tsc --noEmit` exit 0.
+### 2026-09-10 (12:40am) — Tier 5 #1: Admin audit log ✅ (commit `cef7b3c`)
+- **Built the append-only admin audit trail** (Tier 5 item #1). Commit `cef7b3c`, `npx tsc --noEmit` exit 0.
 - **Schema (additive-only):** new `audit_log` table (`db/schemas/audit-log.ts`) — id, actor_id, actor_email (denormalized snapshot), action, target_type, target_id, jsonb metadata, created_at + 3 indexes (created_at / action / actor_id). Migration `0007_elite_shinko_yamashiro.sql` is **CREATE TABLE + CREATE INDEX only** (verified: no DROP/NOT-NULL-backfill/type-narrowing). **Touches schema → hold for Tessie review before push.**
 - **Helper, not inline:** `lib/audit.ts` `recordAudit(ctx, {action,targetType,targetId,metadata})` — best-effort (swallows/logs its own errors so an audit failure never breaks the underlying mutation). Fed by `adminProcedure` now exposing `adminEmail` alongside `adminUserId` (`trpc/server.ts`).
 - **Wired into existing admin mutations:** subscribers create/update/delete/setTags/bulkImport/bulkUpdateStatus/bulkDelete (`admin-subscribers.ts`); newsletters create/update/delete/send/schedule/unschedule (`newsletter.ts`).
