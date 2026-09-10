@@ -14,7 +14,7 @@ const PAGE_SIZE = 20;
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-    title: "Issue archive",
+    title: "All Issues",
     description:
         "Every past issue of PhluentLabs — notes on building the web, for developers. Browse and search the full archive.",
     alternates: {
@@ -92,8 +92,38 @@ export default async function IssuesArchivePage({ searchParams }: Props) {
     await searchParams; // reserved for future server-side paging; keep the contract
     const { issues, total } = await getIssues();
 
+    // CollectionPage describing the archive, with an embedded ItemList that
+    // enumerates every published issue (position-ordered, newest first). Good
+    // for rich results and helps crawlers discover the full back-catalogue.
+    const collectionJsonLd = {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "@id": `${APP_URL}/issues`,
+        url: `${APP_URL}/issues`,
+        name: "All Issues — PhluentLabs",
+        description:
+            "Every past issue of PhluentLabs — notes on building the web, for developers.",
+        inLanguage: "en",
+        isPartOf: { "@id": `${APP_URL}/#website` },
+        mainEntity: {
+            "@type": "ItemList",
+            itemListOrder: "https://schema.org/ItemListOrderDescending",
+            numberOfItems: issues.length,
+            itemListElement: issues.map((issue, i) => ({
+                "@type": "ListItem",
+                position: i + 1,
+                url: `${APP_URL}/issues/${issue.slug}`,
+                name: issue.subject,
+            })),
+        },
+    };
+
     return (
         <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6 sm:py-12">
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
+            />
             <header className="mb-8 space-y-3">
                 <div className="flex items-start justify-between gap-4">
                     <div className="space-y-2">

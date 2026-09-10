@@ -1,0 +1,230 @@
+"use client";
+
+import * as React from "react";
+import { z } from "zod";
+import { useForm, FormProvider, useFormContext } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter, useSearchParams } from "next/navigation";
+import { trpc } from "@/trpc/client";
+
+import { SubscribeForm } from "@/components/forms/subscribe-form";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+    Form,
+    FormControl,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage,
+} from "@/components/ui/form";
+import { Separator } from "@/components/ui/separator";
+import { NewsletterList } from "@/components/newsletter-list";
+
+const subscribeSchema = z.object({
+    email: z.string().email("Enter a valid email"),
+    firstName: z.string().min(1, "First name is required"),
+    lastName: z.string().min(1, "Last name is required"),
+});
+
+type SubscribeValues = z.infer<typeof subscribeSchema>;
+
+function EmailStep() {
+    const { control } = useFormContext<SubscribeValues>();
+    return (
+        <FormField
+            control={control}
+            name="email"
+            render={({ field }) => (
+                <FormItem>
+                    <FormLabel>Email address</FormLabel>
+                    <FormControl>
+                        <Input placeholder="you@domain.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                </FormItem>
+            )}
+        />
+    );
+}
+
+function NameStep() {
+    const { control } = useFormContext<SubscribeValues>();
+    return (
+        <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+                control={control}
+                name="firstName"
+                render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>First name</FormLabel>
+                        <FormControl>
+                            <Input placeholder="First" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                )}
+            />
+            <FormField
+                control={control}
+                name="lastName"
+                render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>Last name</FormLabel>
+                        <FormControl>
+                            <Input placeholder="Last" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                )}
+            />
+        </div>
+    );
+}
+
+function ConfirmStep() {
+    const { getValues } = useFormContext<SubscribeValues>();
+    const { email, firstName, lastName } = getValues();
+    return (
+        <div className="space-y-1 text-sm">
+            <div><span className="font-medium">Email:</span> {email}</div>
+            <div><span className="font-medium">Name:</span> {firstName} {lastName}</div>
+            <p className="text-muted-foreground pt-1">Click Subscribe to finish.</p>
+        </div>
+    );
+}
+
+function HomePageInner() {
+    const router = useRouter();
+    // Referral attribution: a shared link looks like /?ref=<code>. We read the
+    // code here and pass it to the subscribe mutation so the referrer gets
+    // credited. Unknown/blank codes are safely ignored server-side.
+    const searchParams = useSearchParams();
+    const ref = searchParams.get("ref")?.trim() || undefined;
+    const subscribeRequest = trpc.subscribe.request.useMutation();
+    const subscriberCount = trpc.subscribe.count.useQuery(undefined, {
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const methods = useForm<SubscribeValues>({
+        resolver: zodResolver(subscribeSchema),
+        defaultValues: { email: "", firstName: "", lastName: "" },
+        mode: "onTouched",
+    });
+
+    const onSubmit = async (data: SubscribeValues) => {
+        await subscribeRequest.mutateAsync({
+            email: data.email,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            ref,
+        });
+        router.push("/confirm");
+    };
+
+    return (
+        <main className="mx-auto max-w-2xl px-4 sm:px-6">
+            {/* Hero */}
+            <section className="py-12 sm:py-16 text-center space-y-4">
+                <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs text-muted-foreground mb-2">
+                    every sunday · for developers
+                </div>
+                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+                    <span className="bg-linear-to-tr from-primary to-red-500 bg-clip-text text-transparent">
+                        Phluent
+                    </span>
+                    <span className="text-muted-foreground">Labs</span>
+                </h1>
+                <p className="text-muted-foreground text-lg max-w-md mx-auto leading-relaxed">
+                    What I'm noticing while building the web. — straight to your inbox.
+                </p>
+                {(() => {
+                    const n = subscriberCount.data?.count ?? 0;
+                    // Show a real number once there's at least one subscriber.
+                    // Round down to a "NN+" figure past 50 so it reads as social proof.
+                    if (n <= 0) {
+                        return (
+                            <p className="text-sm text-muted-foreground">
+                                Be one of the first developers to subscribe.
+                            </p>
+                        );
+                    }
+                    const label = n >= 50 ? `${Math.floor(n / 10) * 10}+` : `${n}`;
+                    return (
+                        <p className="text-sm text-muted-foreground">
+                            Join{" "}
+                            <span className="font-semibold text-foreground">{label}</span>{" "}
+                            developer{n === 1 ? "" : "s"} already subscribed.
+                        </p>
+                    );
+                })()}
+            </section>
+
+            {/* Subscribe form */}
+            <section className="rounded-2xl border bg-card p-5 sm:p-6 shadow-sm">
+                <h2 className="font-semibold mb-4">Subscribe for free</h2>
+                <FormProvider {...methods}>
+                    <Form {...methods}>
+                        <SubscribeForm<SubscribeValues>
+                            methods={methods}
+                            steps={[
+                                { name: "Email", fields: ["email"], children: <EmailStep /> },
+                                { name: "Your name", fields: ["firstName", "lastName"], children: <NameStep /> },
+                                { name: "Confirm", children: <ConfirmStep /> },
+                            ]}
+                            onSubmit={onSubmit}
+                            controls={({ isFirstStep, isLastStep, back, next, submit }) => (
+                                <div className="mt-5 flex gap-2">
+                                    {!isFirstStep && (
+                                        <Button type="button" variant="outline" onClick={back}>
+                                            Back
+                                        </Button>
+                                    )}
+                                    {!isLastStep ? (
+                                        <Button type="button" onClick={next}>
+                                            Continue
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            type="button"
+                                            onClick={submit}
+                                            disabled={subscribeRequest.isPending}
+                                        >
+                                            {subscribeRequest.isPending ? "Subscribing..." : "Subscribe"}
+                                        </Button>
+                                    )}
+                                </div>
+                            )}
+                        />
+                    </Form>
+                </FormProvider>
+            </section>
+
+            <Separator className="my-12" />
+
+            {/* Past issues */}
+            <section className="pb-16">
+                <div className="flex items-baseline justify-between mb-6">
+                    <h2 className="text-lg font-semibold">Past issues</h2>
+                    <a
+                        href="/issues"
+                        className="text-sm text-muted-foreground transition-colors hover:text-primary"
+                    >
+                        View all &rarr;
+                    </a>
+                </div>
+                <NewsletterList />
+            </section>
+        </main>
+    );
+}
+
+export default function HomeClient() {
+    // useSearchParams (read in HomePageInner for ?ref=) requires a Suspense
+    // boundary during prerender; wrap so the build stays happy.
+    return (
+        <React.Suspense fallback={null}>
+            <HomePageInner />
+        </React.Suspense>
+    );
+}

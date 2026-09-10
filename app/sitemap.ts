@@ -14,6 +14,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
             changeFrequency: "weekly",
             priority: 1,
         },
+        {
+            // The public issue archive index — a key discovery/hub page.
+            url: `${APP_URL}/issues`,
+            lastModified: new Date(),
+            changeFrequency: "weekly",
+            priority: 0.9,
+        },
     ];
 
     // Published issues only — never expose drafts to search engines.
