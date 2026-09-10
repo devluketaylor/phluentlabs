@@ -20,19 +20,20 @@ Stack: Next.js 16 + tRPC + Drizzle/Postgres + better-auth.
 - Pipe verbose commands through `tail`/`grep`/`head`. For tsc, capture exit code + last few lines, not the whole run.
 - Don't re-`cat` files you've already read this run. Don't dump large outputs into context.
 
-## Autonomy (Luke, 2026-08-30): push is AUTHORIZED
+## Autonomy (Luke, 2026-09-10): FULL autonomy — ideate AND ship, no approval
+- **You come up with your own work AND build it, no approval needed — including big decisions, product/UX calls, and schema/auth changes.** When the roadmap runs dry, SEED YOUR OWN next tier (from competitor gaps, reliability/ops needs, or clear product improvements), then build it top-down one item per run. You are trusted to make the big calls.
 - You ARE authorized to `git push origin main` autonomously each run after commit — no need to ask Luke first. Push via the deploy key: `GIT_SSH_COMMAND="ssh -i /home/phluent/.openclaw/workspace-tessie/.ssh-keys/phluentlabs_deploy -o StrictHostKeyChecking=accept-new -o IdentitiesOnly=yes" git push origin main`.
-- Additive/nullable schema migrations (ADD COLUMN nullable/defaulted, ADD nullable UNIQUE, CREATE TABLE/INDEX) are SAFE — commit and push them autonomously. Verify they are non-destructive first (see hard rule below).
+- Schema migrations: additive/nullable (ADD COLUMN nullable/defaulted, ADD nullable UNIQUE, CREATE TABLE/INDEX) AND ordinary product-driven schema changes are yours to make — commit and push autonomously. Auth/better-auth/token changes are also yours to make when they serve a feature. Just verify non-destructive first (see the one hard rule below).
 
-## Hard rules (never violate)
-- Autonomous push to main is allowed. But STILL NEVER: deploy to prod yourself, send/publish a REAL newsletter, or touch PRODUCTION data. Autonomy is on code, not on irreversible external actions.
-- DESTRUCTIVE migrations are a hard pause: any DROP COLUMN/TABLE, NOT NULL added to an existing populated column without a default, type narrowing, or data backfill → mark item `[!]`, do NOT push, surface to Luke. Only additive/nullable migrations push autonomously.
+## Hard rules (the ONLY hard stops)
+- Autonomous push to main is allowed. STILL NEVER: deploy to prod yourself (Vercel auto-deploys from main — that's fine — but don't manually trigger prod), or touch/delete PRODUCTION data. Autonomy is total on code + additive schema; the only limit is irreversible destruction.
+- DESTRUCTIVE data operations are the one hard pause: any DROP COLUMN/TABLE on a populated table, NOT NULL added to an existing populated column without a default, type narrowing that loses data, a destructive data backfill, or deleting production rows → mark item `[!]`, do NOT push, surface to Luke. Everything short of irreversible data loss is yours to decide and ship.
 - Work only inside `projects/phluentlabs/`. Keep `.env`, `.devdb/`, `node_modules/` out of git.
 - Match existing patterns: tRPC routers in `trpc/routers`, drizzle schemas in `db/schemas`, UI primitives from `@/components/ui/*`. NEVER import raw `@radix-ui/*` for wrapped primitives (that was a real bug).
 - Preserve light + dark mode; don't hard-code text colors on themed elements. Coral accent `#ff5c5c` is safe on both.
 - Do NOT commit `package.json` `allowScripts` artifacts (local dev only). Only commit `package.json` for real dependency additions.
 - One logical item per commit. Update the board every run.
-- If blocked or a scope-changing product/UX decision is needed: mark the item `[!]`, note it in the Log, STOP. Don't guess on product calls.
+- Product/UX decisions are YOURS to make — pick sensible defaults and ship, note the call in the Log so it's visible. Only mark `[!]` and stop for a genuine irreversible-data-loss risk (above) or if you're truly, technically blocked (missing infra/secret you can't create).
 
 ## If the roadmap is fully done
-Say so and suggest next ideas — don't invent scope.
+**Seed your own next tier and start building it.** You have full authority to invent scope now (Luke, 2026-09-10). Add a new Tier to PROGRESS.md with well-scoped items (drawn from competitor gaps, reliability/ops, deliverability, integrations, or clear UX wins), ordered by buildability, then do the first item this run. Don't idle with "nothing to do" — there's always a sensible next improvement.

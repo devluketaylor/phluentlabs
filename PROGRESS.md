@@ -11,11 +11,11 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 - [x] Tier 4: **Tags / segments DONE** (`340a665`, schema change — hold for review) → **Segmented send DONE** (`f73e42d`, local, NO schema change) → **Referral program DONE** (`a641630`, additive schema — hold for review) → **Welcome email automation DONE** (`6509f98`, local, NO schema change) → **Embeddable subscribe widget + custom landing DONE** (`f3f48ad`, local, NO schema change) → **A/B subject-line testing DONE** (`8a30bd2`, local, additive schema — hold for review). **Public issue archive / SEO polish DONE** (`5c71ba2`, local, NO schema change). **Subscriber preferences center DONE** (`1c0effe`, local, NO schema change). **Tier 4 roadmap fully complete.**
 - [x] Tier 3: Send analytics (opens/clicks/bounces) via Resend webhooks — **DONE** (`070549f`→`0f583b5`, 2026-08-30). Full open+click tracking, svix-verified webhook handler, per-issue detail page + dashboard aggregate. Luke made all product calls. See Log for setup steps he must do in Resend + Vercel.
 
-## Workflow
-- **Dev loop:** cron `phluentlabs-dev-loop` runs every 3 hours (8x/day, around the clock, CDT). Each run does ONE board item, commits locally, updates this board, posts a summary to Discord.
-- **Code review + push:** Tessie reviews each dev-loop commit and, if it passes review (tsc clean, matches conventions, no raw Radix, dark-mode-safe, diff scoped to one item), **pushes to main automatically — no green light needed** (policy set by Luke 2026-08-25).
-  - **Tessie PAUSES and asks Luke before pushing** when a diff touches: DB schema/migrations, auth/better-auth/tokens/security, real email/newsletter sends or Resend production paths, `.env`/secrets, data deletions/destructive migrations, or is much larger than "one board item" / genuinely uncertain.
-- **Dev loop still NEVER pushes or deploys itself** — only Tessie pushes, after review. Deploys/real sends remain Luke's explicit call.
+## Workflow (FULL AUTONOMY — updated by Luke 2026-09-10)
+- **Dev loop:** cron `phluentlabs-dev-loop` runs every 3 hours (8x/day, around the clock, CDT). Each run does ONE board item, commits, pushes, updates this board, posts a summary to Discord. **When the roadmap runs dry the dev loop SEEDS ITS OWN next tier and keeps building** — it no longer idles with "nothing to do."
+- **Autonomous ideation + push:** the dev agent invents its own scope AND ships it — including product/UX calls and schema/auth changes — and **pushes to main autonomously each run**, no approval from Luke or Tessie. Vercel auto-deploys from main. See DEV_AGENT.md for the standing brief.
+- **The ONE hard stop:** irreversible data loss (destructive migrations on populated tables, deleting prod data) → mark `[!]`, don't push, surface to Luke. Also never manually trigger a prod deploy or send a real newsletter from the dev loop (real sends are the newsletter job's domain). Everything short of that is the agent's call.
+- **Newsletter auto-send:** the Sunday newsletter job (`newsletter-sunday-delivery` cron) now writes → posts → **auto-sends to real subscribers** via the `newsletter.sendViaApiKey` endpoint (`94c7c1b`), no manual send. Luke authorized full auto-send 2026-09-10.
 
 ## Tiers (roadmap)
 
@@ -75,8 +75,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 ## Log (newest first)
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
 
-### 2026-09-10 (12:40am) — Tier 5 #1: Admin audit log ✅ (commit `cef7b3c`)
-- **Built the append-only admin audit trail** (Tier 5 item #1). Commit `cef7b3c`, `npx tsc --noEmit` exit 0.
+### 2026-09-10 (12:40am) — Tier 5 #1: Admin audit log ✅ (commit `77c7a3b`)
+- **Built the append-only admin audit trail** (Tier 5 item #1). Commit `77c7a3b`, `npx tsc --noEmit` exit 0.
 - **Schema (additive-only):** new `audit_log` table (`db/schemas/audit-log.ts`) — id, actor_id, actor_email (denormalized snapshot), action, target_type, target_id, jsonb metadata, created_at + 3 indexes (created_at / action / actor_id). Migration `0007_elite_shinko_yamashiro.sql` is **CREATE TABLE + CREATE INDEX only** (verified: no DROP/NOT-NULL-backfill/type-narrowing). **Touches schema → hold for Tessie review before push.**
 - **Helper, not inline:** `lib/audit.ts` `recordAudit(ctx, {action,targetType,targetId,metadata})` — best-effort (swallows/logs its own errors so an audit failure never breaks the underlying mutation). Fed by `adminProcedure` now exposing `adminEmail` alongside `adminUserId` (`trpc/server.ts`).
 - **Wired into existing admin mutations:** subscribers create/update/delete/setTags/bulkImport/bulkUpdateStatus/bulkDelete (`admin-subscribers.ts`); newsletters create/update/delete/send/schedule/unschedule (`newsletter.ts`).
