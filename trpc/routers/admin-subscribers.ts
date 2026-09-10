@@ -4,6 +4,7 @@ import {and, arrayContains, asc, count, desc, eq, ilike, inArray, or, sql} from 
 import {subscribers} from "@/db/schemas/subscribers";
 import {newsletterRecipients} from "@/db/schemas/newsletter-recipients";
 import {newsletters} from "@/db/schemas/newsletters";
+import {recordAudit} from "@/lib/audit";
 
 // Normalize a raw tag list: trim, drop empties, dedupe case-insensitively
 // (keeping first-seen casing), preserve order.
@@ -275,6 +276,11 @@ export const adminSubscribersRouter = router({
             if (toInsert.length) {
                 await ctx.db.insert(subscribers).values(toInsert);
                 inserted = toInsert.length;
+                await recordAudit(ctx, {
+                    action: "subscriber.bulkImport",
+                    targetType: "subscriber",
+                    metadata: { inserted, skippedDuplicate, skippedInvalid },
+                });
             }
 
             return { ok: true, inserted, skippedDuplicate, skippedInvalid, errors };
@@ -313,6 +319,13 @@ export const adminSubscribersRouter = router({
                 unsubscribedAt: input.status === "unsubscribed" ? now : null,
             });
 
+            await recordAudit(ctx, {
+                action: "subscriber.create",
+                targetType: "subscriber",
+                targetId: id,
+                metadata: { email, status: input.status },
+            });
+
             return { ok: true, id };
         }),
     update: adminProcedure
@@ -341,6 +354,17 @@ export const adminSubscribersRouter = router({
                 })
                 .where(eq(subscribers.id, input.id))
 
+            await recordAudit(ctx, {
+                action: "subscriber.update",
+                targetType: "subscriber",
+                targetId: input.id,
+                metadata: {
+                    email: input.email.trim().toLowerCase(),
+                    status: input.status,
+                    ...(input.tags !== undefined ? { tags: normalizeTags(input.tags) } : {}),
+                },
+            });
+
             return { ok: true };
         }),
 
@@ -354,10 +378,17 @@ export const adminSubscribersRouter = router({
             })
         )
         .mutation(async ({ input, ctx }) => {
+            const tags = normalizeTags(input.tags);
             await ctx.db
                 .update(subscribers)
-                .set({ tags: normalizeTags(input.tags), updatedAt: new Date() })
+                .set({ tags, updatedAt: new Date() })
                 .where(eq(subscribers.id, input.id));
+            await recordAudit(ctx, {
+                action: "subscriber.setTags",
+                targetType: "subscriber",
+                targetId: input.id,
+                metadata: { tags },
+            });
             return { ok: true };
         }),
 
@@ -382,6 +413,11 @@ export const adminSubscribersRouter = router({
         .input(z.object({ id: string().min(1) }))
         .mutation(async ({ input, ctx }) => {
             await ctx.db.delete(subscribers).where(eq(subscribers.id, input.id))
+            await recordAudit(ctx, {
+                action: "subscriber.delete",
+                targetType: "subscriber",
+                targetId: input.id,
+            });
             return { ok: true }
         }),
 
@@ -404,6 +440,12 @@ export const adminSubscribersRouter = router({
                 })
                 .where(inArray(subscribers.id, input.ids));
 
+            await recordAudit(ctx, {
+                action: "subscriber.bulkUpdateStatus",
+                targetType: "subscriber",
+                metadata: { status: input.status, count: input.ids.length, ids: input.ids },
+            });
+
             return { ok: true, updated: input.ids.length };
         }),
 
@@ -411,6 +453,11 @@ export const adminSubscribersRouter = router({
         .input(z.object({ ids: z.array(z.string().min(1)).min(1).max(5000) }))
         .mutation(async ({ input, ctx }) => {
             await ctx.db.delete(subscribers).where(inArray(subscribers.id, input.ids));
+            await recordAudit(ctx, {
+                action: "subscriber.bulkDelete",
+                targetType: "subscriber",
+                metadata: { count: input.ids.length, ids: input.ids },
+            });
             return { ok: true, deleted: input.ids.length };
         }),
 })

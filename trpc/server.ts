@@ -38,6 +38,8 @@ const adminMiddleware = t.middleware(async ({ ctx, next }) => {
         ctx: {
             ...ctx,
             adminUserId: session.user.id,
+            // Denormalized actor email snapshot for the audit log (see recordAudit).
+            adminEmail: (session.user as any).email as string | undefined,
         }
     })
 })

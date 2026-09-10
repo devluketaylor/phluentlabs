@@ -17,6 +17,7 @@ import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { TRPCError } from "@trpc/server";
 import { sendNewsletterToSubscribers } from "@/lib/send-newsletter";
+import { recordAudit } from "@/lib/audit";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -72,6 +73,12 @@ export const adminNewsletterRouter = router({
                 preheader: input.preheader ?? null,
                 status: "draft",
                 createdBy: ctx.adminUserId,
+            });
+            await recordAudit(ctx, {
+                action: "newsletter.create",
+                targetType: "newsletter",
+                targetId: id,
+                metadata: { subject: input.subject.trim(), slug },
             });
             return { ok: true, id, slug };
         }),
@@ -142,6 +149,12 @@ export const adminNewsletterRouter = router({
                     updatedAt: new Date(),
                 })
                 .where(eq(newsletters.id, input.id));
+            await recordAudit(ctx, {
+                action: "newsletter.update",
+                targetType: "newsletter",
+                targetId: input.id,
+                metadata: { subject: input.subject.trim(), status: input.status },
+            });
             return { ok: true };
         }),
 
@@ -149,6 +162,11 @@ export const adminNewsletterRouter = router({
         .input(z.object({ id: z.string().min(1) }))
         .mutation(async ({ input, ctx }) => {
             await ctx.db.delete(newsletters).where(eq(newsletters.id, input.id));
+            await recordAudit(ctx, {
+                action: "newsletter.delete",
+                targetType: "newsletter",
+                targetId: input.id,
+            });
             return { ok: true };
         }),
 
@@ -161,9 +179,15 @@ export const adminNewsletterRouter = router({
                 tag: z.string().trim().min(1).nullish(),
             })
         )
-        .mutation(async ({ input }) => {
+        .mutation(async ({ input, ctx }) => {
             try {
                 const { sent } = await sendNewsletterToSubscribers(input.id, { tag: input.tag });
+                await recordAudit(ctx, {
+                    action: "newsletter.send",
+                    targetType: "newsletter",
+                    targetId: input.id,
+                    metadata: { sent, tag: input.tag ?? null },
+                });
                 return { ok: true, sent };
             } catch (e) {
                 const msg = e instanceof Error ? e.message : "Send failed";
@@ -352,6 +376,11 @@ export const adminNewsletterRouter = router({
                     .update(newsletters)
                     .set({ status: "draft", scheduledAt: null, updatedAt: new Date() })
                     .where(eq(newsletters.id, input.id));
+                await recordAudit(ctx, {
+                    action: "newsletter.unschedule",
+                    targetType: "newsletter",
+                    targetId: input.id,
+                });
                 return { ok: true, scheduled: false };
             }
 
@@ -364,6 +393,12 @@ export const adminNewsletterRouter = router({
                 .update(newsletters)
                 .set({ status: "scheduled", scheduledAt: when, updatedAt: new Date() })
                 .where(eq(newsletters.id, input.id));
+            await recordAudit(ctx, {
+                action: "newsletter.schedule",
+                targetType: "newsletter",
+                targetId: input.id,
+                metadata: { scheduledAt: when.toISOString() },
+            });
             return { ok: true, scheduled: true, scheduledAt: when.toISOString() };
         }),
 

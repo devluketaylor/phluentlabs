@@ -50,6 +50,13 @@
       "when": 1788163460865,
       "tag": "0006_tiny_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789018554198,
+      "tag": "0007_elite_shinko_yamashiro",
+      "breakpoints": true
     }
   ]
 }
