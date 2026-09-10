@@ -5,6 +5,7 @@ import { adminNewsletterRouter, newsletterRouter } from "@/trpc/routers/newslett
 import { adminDashboardRouter } from "@/trpc/routers/admin-dashboard";
 import { adminAuditRouter } from "@/trpc/routers/admin-audit";
 import { adminApiKeysRouter } from "@/trpc/routers/admin-api-keys";
+import { adminTeamRouter } from "@/trpc/routers/admin-team";
 
 export const appRouter = router({
     subscribe: subscribeRouter,
@@ -13,6 +14,7 @@ export const appRouter = router({
     adminDashboard: adminDashboardRouter,
     adminAudit: adminAuditRouter,
     adminApiKeys: adminApiKeysRouter,
+    adminTeam: adminTeamRouter,
     newsletter: newsletterRouter,
 });
 

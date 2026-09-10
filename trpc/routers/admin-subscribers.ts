@@ -1,4 +1,4 @@
-import {adminProcedure, router} from "@/trpc/server";
+import {adminProcedure, editorProcedure, router} from "@/trpc/server";
 import {string, z} from "zod";
 import {and, arrayContains, asc, count, desc, eq, ilike, inArray, or, sql} from "drizzle-orm";
 import {subscribers} from "@/db/schemas/subscribers";
@@ -253,7 +253,7 @@ export const adminSubscribersRouter = router({
                 conflictSample,
             };
         }),
-    bulkImport: adminProcedure
+    bulkImport: editorProcedure
         .input(
             z.object({
                 rows: z
@@ -345,7 +345,7 @@ export const adminSubscribersRouter = router({
 
             return { ok: true, inserted, skippedDuplicate, skippedInvalid, errors };
         }),
-    create: adminProcedure
+    create: editorProcedure
         .input(
             z.object({
                 email: z.string().email(),
@@ -388,7 +388,7 @@ export const adminSubscribersRouter = router({
 
             return { ok: true, id };
         }),
-    update: adminProcedure
+    update: editorProcedure
         .input(
             z.object({
                 id: z.string().min(1),
@@ -430,7 +430,7 @@ export const adminSubscribersRouter = router({
 
     // Replace the full tag list on a single subscriber (used by the tag chips
     // input in the edit dialog). Normalizes: trims, drops empties, dedupes.
-    setTags: adminProcedure
+    setTags: editorProcedure
         .input(
             z.object({
                 id: z.string().min(1),
@@ -469,7 +469,7 @@ export const adminSubscribersRouter = router({
         return { tags: list };
     }),
 
-    delete: adminProcedure
+    delete: editorProcedure
         .input(z.object({ id: string().min(1) }))
         .mutation(async ({ input, ctx }) => {
             await ctx.db.delete(subscribers).where(eq(subscribers.id, input.id))
@@ -481,7 +481,7 @@ export const adminSubscribersRouter = router({
             return { ok: true }
         }),
 
-    bulkUpdateStatus: adminProcedure
+    bulkUpdateStatus: editorProcedure
         .input(
             z.object({
                 ids: z.array(z.string().min(1)).min(1).max(5000),
@@ -509,7 +509,7 @@ export const adminSubscribersRouter = router({
             return { ok: true, updated: input.ids.length };
         }),
 
-    bulkDelete: adminProcedure
+    bulkDelete: editorProcedure
         .input(z.object({ ids: z.array(z.string().min(1)).min(1).max(5000) }))
         .mutation(async ({ input, ctx }) => {
             await ctx.db.delete(subscribers).where(inArray(subscribers.id, input.ids));

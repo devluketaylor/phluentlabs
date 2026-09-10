@@ -1,4 +1,4 @@
-import { adminProcedure, publicProcedure, router } from "@/trpc/server";
+import { adminProcedure, editorProcedure, publicProcedure, router } from "@/trpc/server";
 import { z } from "zod";
 
 function toSlug(text: string): string {
@@ -45,7 +45,7 @@ export const adminNewsletterRouter = router({
             return { items, total };
         }),
 
-    create: adminProcedure
+    create: editorProcedure
         .input(
             z.object({
                 subject: z.string().min(1),
@@ -84,7 +84,7 @@ export const adminNewsletterRouter = router({
             return { ok: true, id, slug };
         }),
 
-    update: adminProcedure
+    update: editorProcedure
         .input(
             z.object({
                 id: z.string().min(1),
@@ -159,7 +159,7 @@ export const adminNewsletterRouter = router({
             return { ok: true };
         }),
 
-    delete: adminProcedure
+    delete: editorProcedure
         .input(z.object({ id: z.string().min(1) }))
         .mutation(async ({ input, ctx }) => {
             await ctx.db.delete(newsletters).where(eq(newsletters.id, input.id));
@@ -171,7 +171,7 @@ export const adminNewsletterRouter = router({
             return { ok: true };
         }),
 
-    send: adminProcedure
+    send: editorProcedure
         .input(
             z.object({
                 id: z.string().min(1),
@@ -372,7 +372,7 @@ export const adminNewsletterRouter = router({
 
     // Schedule (or reschedule) a newsletter to send at a future time. A cron
     // job hits sendScheduledDue() to fire due sends. Pass null to unschedule.
-    schedule: adminProcedure
+    schedule: editorProcedure
         .input(
             z.object({
                 id: z.string().min(1),
@@ -450,7 +450,7 @@ export const adminNewsletterRouter = router({
     // Send a single test copy to a chosen address (e.g. yourself) so you can
     // proof formatting/dark-mode before the real blast. Does NOT mark as sent,
     // does NOT touch subscribers, and includes a clear [TEST] subject prefix.
-    sendTest: adminProcedure
+    sendTest: editorProcedure
         .input(
             z.object({
                 id: z.string().min(1),

@@ -1,4 +1,7 @@
-import { adminProcedure, router } from "@/trpc/server";
+import { adminProcedure, roleProcedure, router } from "@/trpc/server";
+
+// Managing API keys is a privileged action — require at least the admin role.
+const apiKeyManageProcedure = roleProcedure("admin");
 import { z } from "zod";
 import { desc, eq } from "drizzle-orm";
 import { apiKeys } from "@/db/schemas/api-keys";
@@ -29,7 +32,7 @@ export const adminApiKeysRouter = router({
 
     // Create a new key. Returns the raw key ONCE — the UI must surface it
     // immediately and warn the admin it won't be shown again.
-    create: adminProcedure
+    create: apiKeyManageProcedure
         .input(z.object({ label: z.string().trim().min(1).max(120) }))
         .mutation(async ({ input, ctx }) => {
             const raw = generateApiKey();
@@ -57,7 +60,7 @@ export const adminApiKeysRouter = router({
 
     // Soft-revoke a key: it stays in the table (for the audit trail) but is
     // rejected by the public API from now on. Idempotent.
-    revoke: adminProcedure
+    revoke: apiKeyManageProcedure
         .input(z.object({ id: z.string().min(1) }))
         .mutation(async ({ input, ctx }) => {
             const [existing] = await ctx.db
