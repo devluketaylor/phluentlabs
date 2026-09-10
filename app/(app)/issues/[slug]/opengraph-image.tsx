@@ -8,7 +8,7 @@ export const alt = "PhluentLabs newsletter issue";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-type Props = { params: { slug: string } };
+type Props = { params: Promise<{ slug: string }> };
 
 async function getIssue(slug: string) {
     try {
@@ -33,7 +33,7 @@ async function getIssue(slug: string) {
 }
 
 export default async function Image({ params }: Props) {
-    const { slug } = params;
+    const { slug } = await params;
     const issue = await getIssue(slug);
 
     const subject = issue?.subject ?? "PhluentLabs";
@@ -59,40 +59,30 @@ export default async function Image({ params }: Props) {
                     fontFamily: "sans-serif",
                 }}
             >
-                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <div
-                        style={{
-                            color: "#ff5c5c",
-                            fontSize: 30,
-                            fontWeight: 700,
-                            letterSpacing: "-0.5px",
-                        }}
-                    >
-                        Phluent
-                    </div>
-                    <div style={{ color: "#ffffff", fontSize: 30, fontWeight: 700 }}>Labs</div>
-                    <div
-                        style={{
-                            color: "#888",
-                            fontSize: 20,
-                            marginLeft: "10px",
-                            textTransform: "uppercase",
-                            letterSpacing: "2px",
-                        }}
-                    >
-                        weekly · for developers
-                    </div>
+                {/* Small kicker label — keeps a light brand cue without competing
+                    with the title. The issue TITLE is the star of the card. */}
+                <div
+                    style={{
+                        display: "flex",
+                        color: "#ff5c5c",
+                        fontSize: 22,
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                        letterSpacing: "3px",
+                    }}
+                >
+                    phluent weekly
                 </div>
 
                 <div
                     style={{
                         display: "flex",
                         color: "#ffffff",
-                        fontSize: 64,
+                        fontSize: 68,
                         fontWeight: 700,
-                        lineHeight: 1.15,
+                        lineHeight: 1.12,
                         letterSpacing: "-1.5px",
-                        maxWidth: "1000px",
+                        maxWidth: "1060px",
                     }}
                 >
                     {subject}
