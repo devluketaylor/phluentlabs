@@ -512,6 +512,31 @@ export const newsletterRouter = router({
 
       return { ok: true, id, slug, url: `/issues/${slug}` };
     }),
+    // API-key-protected: send ONE issue to all confirmed subscribers NOW.
+    // Powers the automated Sunday newsletter (Luke authorized full auto-send
+    // 2026-09-10 — no manual send). Reuses the shared send path so delivery
+    // logic stays in one place. sendNewsletterToSubscribers throws if the issue
+    // is already "sent", so a duplicate call cannot double-send.
+    sendViaApiKey: publicProcedure
+      .input(
+        z.object({
+          id: z.string().min(1),
+          apiKey: z.string().min(1),
+          tag: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        if (
+          !process.env.NEWSLETTER_API_KEY ||
+          input.apiKey !== process.env.NEWSLETTER_API_KEY
+        ) {
+          throw new TRPCError({ code: "UNAUTHORIZED" });
+        }
+        const { sent } = await sendNewsletterToSubscribers(input.id, {
+          tag: input.tag ?? null,
+        });
+        return { ok: true, sent };
+      }),
     list: publicProcedure
         .input(z.object({ page: z.number().int().min(1).default(1) }))
         .query(async ({ input, ctx }) => {
