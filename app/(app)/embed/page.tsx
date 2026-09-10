@@ -42,6 +42,13 @@ export default function EmbedPage() {
                     Add <code>?ref=&lt;code&gt;</code> to credit a referrer, or{" "}
                     <code>?name=1</code> to also collect a first name.
                 </p>
+                <p>
+                    Building a custom integration instead? Use the{" "}
+                    <a href="/docs/api" className="text-[#ff5c5c] underline underline-offset-4">
+                        subscribe API
+                    </a>{" "}
+                    to enroll people programmatically.
+                </p>
             </section>
         </main>
     );
