@@ -18,6 +18,13 @@ import {
 import {toast} from "sonner";
 import {ArrowDown, ArrowUp, ChevronsUpDown} from "lucide-react";
 import Link from "next/link";
+import {
+    IMPORT_SOURCES,
+    parseCsv,
+    rowsToImport,
+    type ImportRow,
+    type ImportSource,
+} from "@/lib/import-subscribers";
 
 type Status = "pending" | "subscribed" | "unsubscribed";
 type SortBy = "email" | "firstName" | "lastName" | "status" | "createdAt";
@@ -492,89 +499,8 @@ function SortableHead({
     );
 }
 
-type ImportRow = { email: string; firstName: string | null; lastName: string | null; status?: Status };
-
-// Minimal RFC-4180-ish CSV parser: handles quoted fields, embedded commas,
-// escaped quotes (""), and \r\n / \n line endings.
-function parseCsv(text: string): string[][] {
-    const rows: string[][] = [];
-    let field = "";
-    let row: string[] = [];
-    let inQuotes = false;
-    const src = text.replace(/^\uFEFF/, ""); // strip BOM
-
-    for (let i = 0; i < src.length; i++) {
-        const ch = src[i];
-        if (inQuotes) {
-            if (ch === '"') {
-                if (src[i + 1] === '"') {
-                    field += '"';
-                    i++;
-                } else {
-                    inQuotes = false;
-                }
-            } else {
-                field += ch;
-            }
-        } else if (ch === '"') {
-            inQuotes = true;
-        } else if (ch === ",") {
-            row.push(field);
-            field = "";
-        } else if (ch === "\n" || ch === "\r") {
-            if (ch === "\r" && src[i + 1] === "\n") i++;
-            row.push(field);
-            field = "";
-            rows.push(row);
-            row = [];
-        } else {
-            field += ch;
-        }
-    }
-    // trailing field/row
-    if (field.length > 0 || row.length > 0) {
-        row.push(field);
-        rows.push(row);
-    }
-    return rows.filter((r) => r.some((c) => c.trim() !== ""));
-}
-
-const VALID_STATUSES: Status[] = ["pending", "subscribed", "unsubscribed"];
-
-function rowsToImport(parsed: string[][]): ImportRow[] {
-    if (parsed.length === 0) return [];
-
-    // Detect header row: if first row contains an "email" cell.
-    const first = parsed[0].map((c) => c.trim().toLowerCase());
-    const hasHeader = first.includes("email");
-
-    let idxEmail = 0;
-    let idxFirst = 1;
-    let idxLast = 2;
-    let idxStatus = 3;
-    let dataRows = parsed;
-
-    if (hasHeader) {
-        const find = (names: string[]) => first.findIndex((c) => names.includes(c));
-        idxEmail = find(["email", "e-mail", "email address"]);
-        idxFirst = find(["first_name", "first name", "firstname", "first"]);
-        idxLast = find(["last_name", "last name", "lastname", "last"]);
-        idxStatus = find(["status"]);
-        dataRows = parsed.slice(1);
-    }
-
-    const out: ImportRow[] = [];
-    for (const r of dataRows) {
-        const email = (idxEmail >= 0 ? r[idxEmail] : "")?.trim() ?? "";
-        if (!email) continue;
-        const firstName = idxFirst >= 0 ? (r[idxFirst]?.trim() || null) : null;
-        const lastName = idxLast >= 0 ? (r[idxLast]?.trim() || null) : null;
-        const rawStatus = idxStatus >= 0 ? (r[idxStatus]?.trim().toLowerCase() ?? "") : "";
-        const status = VALID_STATUSES.includes(rawStatus as Status) ? (rawStatus as Status) : undefined;
-        out.push({ email, firstName, lastName, status });
-    }
-    return out;
-}
+// ImportRow / parseCsv / rowsToImport now live in @/lib/import-subscribers so
+// the format-detection + column-mapping logic is shared and testable.
 
 function ImportSubscribersButton({
     onImport,
@@ -584,21 +510,44 @@ function ImportSubscribersButton({
     importing: boolean;
 }) {
     const inputRef = useRef<HTMLInputElement>(null);
+    const [source, setSource] = useState<ImportSource>("auto");
+    const [open, setOpen] = useState(false);
+    const [fileName, setFileName] = useState<string>("");
+    const [rows, setRows] = useState<ImportRow[]>([]);
+    const [detected, setDetected] = useState<string>("");
+
+    const preview = trpc.adminSubscribers.previewImport.useQuery(
+        { emails: rows.map((r) => r.email) },
+        { enabled: open && rows.length > 0 }
+    );
 
     const handleFile = async (file: File) => {
         try {
             const text = await file.text();
             const parsed = parseCsv(text);
-            const rows = rowsToImport(parsed);
-            if (rows.length === 0) {
-                toast.error("No valid rows found in CSV");
+            const { rows: mapped, detected: det } = rowsToImport(parsed, source);
+            if (mapped.length === 0) {
+                toast.error("No rows with an email found in that file");
                 return;
             }
-            onImport(rows);
+            setRows(mapped);
+            setDetected(det);
+            setFileName(file.name);
+            setOpen(true);
         } catch (err: any) {
-            toast.error(err?.message || "Failed to read CSV");
+            toast.error(err?.message || "Failed to read file");
         }
     };
+
+    const reset = () => {
+        setOpen(false);
+        setRows([]);
+        setFileName("");
+        setDetected("");
+    };
+
+    const sourceLabel = (v: string) =>
+        IMPORT_SOURCES.find((s) => s.value === v)?.label ?? v;
 
     return (
         <>
@@ -613,14 +562,104 @@ function ImportSubscribersButton({
                     e.target.value = "";
                 }}
             />
-            <Button
-                variant="secondary"
-                onClick={() => inputRef.current?.click()}
-                disabled={importing}
-            >
-                {importing ? "Importing…" : "Import CSV"}
-            </Button>
+            <div className="flex items-center gap-2">
+                <Select value={source} onValueChange={(v) => setSource(v as ImportSource)}>
+                    <SelectTrigger className="w-[160px]" aria-label="Import source">
+                        <SelectValue placeholder="Import source" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {IMPORT_SOURCES.map((s) => (
+                            <SelectItem key={s.value} value={s.value}>
+                                {s.label}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+                <Button
+                    variant="secondary"
+                    onClick={() => inputRef.current?.click()}
+                    disabled={importing}
+                >
+                    {importing ? "Importing…" : "Import"}
+                </Button>
+            </div>
+
+            <Dialog open={open} onOpenChange={(o) => (o ? setOpen(true) : reset())}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Import preview</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 text-sm">
+                        <div className="text-muted-foreground">
+                            <span className="font-medium text-foreground">{fileName}</span> ·{" "}
+                            {rows.length} row{rows.length === 1 ? "" : "s"} parsed
+                            {source === "auto" && detected ? (
+                                <> · detected format: <span className="font-medium text-foreground">{sourceLabel(detected)}</span></>
+                            ) : null}
+                        </div>
+
+                        {preview.isLoading ? (
+                            <div className="text-muted-foreground">Analyzing…</div>
+                        ) : preview.data ? (
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                                <PreviewStat label="To add" value={preview.data.add} accent />
+                                <PreviewStat label="Conflicts" value={preview.data.conflict} />
+                                <PreviewStat label="In-file dupes" value={preview.data.duplicateInFile} />
+                                <PreviewStat label="Invalid" value={preview.data.invalid} />
+                            </div>
+                        ) : preview.error ? (
+                            <div className="text-destructive">{preview.error.message}</div>
+                        ) : null}
+
+                        {preview.data && preview.data.conflictSample.length > 0 ? (
+                            <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                                <div className="mb-1 font-medium text-foreground">
+                                    Already-subscribed (will be skipped):
+                                </div>
+                                <div className="break-all">
+                                    {preview.data.conflictSample.join(", ")}
+                                    {preview.data.conflict > preview.data.conflictSample.length
+                                        ? ` … +${preview.data.conflict - preview.data.conflictSample.length} more`
+                                        : ""}
+                                </div>
+                            </div>
+                        ) : null}
+
+                        <div className="flex justify-end gap-2 pt-2">
+                            <Button variant="secondary" onClick={reset} disabled={importing}>
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={() => {
+                                    onImport(rows);
+                                    reset();
+                                }}
+                                disabled={importing || !preview.data || preview.data.add === 0}
+                                style={{ backgroundColor: "#ff5c5c" }}
+                                className="text-white hover:opacity-90"
+                            >
+                                {importing
+                                    ? "Importing…"
+                                    : preview.data
+                                        ? `Import ${preview.data.add}`
+                                        : "Import"}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </>
+    );
+}
+
+function PreviewStat({ label, value, accent }: { label: string; value: number; accent?: boolean }) {
+    return (
+        <div className="rounded-md border border-border p-3 text-center">
+            <div className={`text-xl font-semibold ${accent ? "" : "text-foreground"}`} style={accent ? { color: "#ff5c5c" } : undefined}>
+                {value}
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">{label}</div>
+        </div>
     );
 }
 

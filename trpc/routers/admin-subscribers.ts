@@ -197,6 +197,62 @@ export const adminSubscribersRouter = router({
 
             return { csv: lines.join("\n"), count: rows.length };
         }),
+    // Dry-run preview: classify incoming rows against the DB WITHOUT writing.
+    // Returns add / conflict (already exists) / in-file-duplicate / invalid
+    // counts plus a small sample of conflicting emails, so the import UI can
+    // show a confirmation step before committing.
+    previewImport: adminProcedure
+        .input(
+            z.object({
+                emails: z.array(z.string()).min(1).max(5000),
+            })
+        )
+        .query(async ({ input, ctx }) => {
+            const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+            const seen = new Set<string>();
+            const valid: string[] = [];
+            let invalid = 0;
+            let duplicateInFile = 0;
+
+            for (const raw of input.emails) {
+                const email = raw.trim().toLowerCase();
+                if (!email || !emailRe.test(email)) {
+                    invalid++;
+                    continue;
+                }
+                if (seen.has(email)) {
+                    duplicateInFile++;
+                    continue;
+                }
+                seen.add(email);
+                valid.push(email);
+            }
+
+            let conflict = 0;
+            const conflictSample: string[] = [];
+            if (valid.length) {
+                const existingRows = await ctx.db
+                    .select({ email: subscribers.email })
+                    .from(subscribers)
+                    .where(inArray(subscribers.email, valid));
+                const existing = new Set(existingRows.map((r) => r.email));
+                for (const e of valid) {
+                    if (existing.has(e)) {
+                        conflict++;
+                        if (conflictSample.length < 10) conflictSample.push(e);
+                    }
+                }
+            }
+
+            return {
+                total: input.emails.length,
+                add: valid.length - conflict,
+                conflict,
+                duplicateInFile,
+                invalid,
+                conflictSample,
+            };
+        }),
     bulkImport: adminProcedure
         .input(
             z.object({
@@ -207,6 +263,7 @@ export const adminSubscribersRouter = router({
                             firstName: z.string().nullable().optional(),
                             lastName: z.string().nullable().optional(),
                             status: z.enum(["pending", "subscribed", "unsubscribed"]).optional(),
+                            tags: z.array(z.string()).optional(),
                         })
                     )
                     .min(1)
@@ -226,6 +283,7 @@ export const adminSubscribersRouter = router({
                 firstName: string | null;
                 lastName: string | null;
                 status: "pending" | "subscribed" | "unsubscribed";
+                tags: string[];
             }>();
 
             for (const raw of input.rows) {
@@ -240,6 +298,7 @@ export const adminSubscribersRouter = router({
                     firstName: raw.firstName?.trim() || null,
                     lastName: raw.lastName?.trim() || null,
                     status: raw.status ?? "subscribed",
+                    tags: raw.tags ? normalizeTags(raw.tags) : [],
                 });
             }
 
@@ -268,6 +327,7 @@ export const adminSubscribersRouter = router({
                     firstName: c.firstName,
                     lastName: c.lastName,
                     status: c.status,
+                    tags: c.tags,
                     confirmedAt: c.status === "subscribed" ? now : null,
                     unsubscribedAt: c.status === "unsubscribed" ? now : null,
                 });
