@@ -112,6 +112,13 @@ export default function ApiDocsPage() {
                     </a>
                     .
                 </p>
+                <p>
+                    Making sure your emails land in the inbox? See the{" "}
+                    <a href="/docs/deliverability" className="text-[#ff5c5c] underline underline-offset-4">
+                        deliverability guide
+                    </a>
+                    .
+                </p>
             </section>
         </main>
     );

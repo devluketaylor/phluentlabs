@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard, ScrollText, KeyRound } from "lucide-react";
+import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard, ScrollText, KeyRound, ShieldCheck } from "lucide-react";
 import {
     Sidebar,
     SidebarContent,
@@ -24,6 +24,7 @@ const navItems = [
     { title: "Subscribers", href: "/admin/subscribers", icon: Users },
     { title: "Audit Log", href: "/admin/audit", icon: ScrollText },
     { title: "API Keys", href: "/admin/api-keys", icon: KeyRound },
+    { title: "Deliverability", href: "/admin/deliverability", icon: ShieldCheck },
 ];
 
 export function AdminSidebar() {
