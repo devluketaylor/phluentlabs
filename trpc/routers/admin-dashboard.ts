@@ -1,5 +1,5 @@
 import { adminProcedure, router } from "@/trpc/server";
-import { and, count, desc, eq, gte, isNotNull, lt, inArray } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNotNull, lt, inArray, asc } from "drizzle-orm";
 import { subscribers } from "@/db/schemas/subscribers";
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
@@ -251,6 +251,176 @@ export const adminDashboardRouter = router({
                 complaintRate: rate(totals.complained, totals.recipients),
             },
             issues,
+        };
+    }),
+
+    // Analytics v2 — TIME-SERIES growth + performance history. Read-only
+    // aggregation, no schema. Powers the dashboard "growth over time" charts:
+    //   - weekly subscriber growth (net-new confirmed signups per ISO week)
+    //   - per-issue open/click rate over time (chronological, sent issues)
+    //   - best-performing issues (by open rate, min recipient floor)
+    //   - A/B subject-line winner history (issues that ran a subject test)
+    timeseries: adminProcedure.query(async ({ ctx }) => {
+        const now = new Date();
+        // Look back 12 weeks for the growth chart.
+        const weeks = 12;
+        const msWeek = 7 * 24 * 60 * 60 * 1000;
+        // Anchor to the start of the current week (Sunday 00:00 local-ish; we
+        // bucket by UTC-day math which is fine for a coarse weekly rollup).
+        const windowStart = new Date(now.getTime() - weeks * msWeek);
+
+        // Pull the createdAt of every subscriber inside the window in one shot
+        // and bucket in JS (cheap at newsletter-list scale, avoids DB-specific
+        // date_trunc SQL and keeps this portable).
+        const [signupRows, sentIssues] = await Promise.all([
+            ctx.db
+                .select({ createdAt: subscribers.createdAt })
+                .from(subscribers)
+                .where(gte(subscribers.createdAt, windowStart)),
+            // All sent issues, oldest-first, for the performance timeline.
+            ctx.db
+                .select({
+                    id: newsletters.id,
+                    slug: newsletters.slug,
+                    subject: newsletters.subject,
+                    subjectB: newsletters.subjectB,
+                    sentAt: newsletters.sentAt,
+                })
+                .from(newsletters)
+                .where(eq(newsletters.status, "sent"))
+                .orderBy(asc(newsletters.sentAt)),
+        ]);
+
+        // Build the 12 weekly buckets (oldest → newest).
+        const buckets: Array<{ label: string; count: number }> = [];
+        for (let i = weeks - 1; i >= 0; i--) {
+            const start = new Date(now.getTime() - i * msWeek);
+            start.setHours(0, 0, 0, 0);
+            buckets.push({
+                label: start.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+                count: 0,
+            });
+        }
+        // Bucket each signup by its age in whole weeks.
+        for (const r of signupRows) {
+            if (!r.createdAt) continue;
+            const ageWeeks = Math.floor((now.getTime() - new Date(r.createdAt).getTime()) / msWeek);
+            const idx = weeks - 1 - ageWeeks;
+            if (idx >= 0 && idx < buckets.length) buckets[idx].count += 1;
+        }
+        let cumulative = 0;
+        const growth = buckets.map((b) => {
+            cumulative += b.count;
+            return { label: b.label, netNew: b.count, cumulative };
+        });
+
+        // Per-issue engagement over time + best performers + A/B history.
+        let performance: Array<{
+            id: string; slug: string | null; subject: string; sentAt: Date | null;
+            recipients: number; delivered: number; opened: number; clicked: number;
+            openRate: number; clickRate: number;
+        }> = [];
+        let abHistory: Array<{
+            id: string; subject: string; subjectB: string; sentAt: Date | null;
+            aRecipients: number; aOpened: number; aOpenRate: number;
+            bRecipients: number; bOpened: number; bOpenRate: number;
+            winner: "A" | "B" | "tie" | null;
+        }> = [];
+
+        if (sentIssues.length > 0) {
+            const ids = sentIssues.map((n) => n.id);
+            const grouped = await ctx.db
+                .select({
+                    newsletterId: newsletterRecipients.newsletterId,
+                    recipients: count(),
+                    delivered: count(newsletterRecipients.deliveredAt),
+                    opened: count(newsletterRecipients.openedAt),
+                    clicked: count(newsletterRecipients.clickedAt),
+                })
+                .from(newsletterRecipients)
+                .where(inArray(newsletterRecipients.newsletterId, ids))
+                .groupBy(newsletterRecipients.newsletterId);
+            const byId = new Map(grouped.map((g) => [g.newsletterId, g]));
+            const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
+
+            performance = sentIssues.map((n) => {
+                const g = byId.get(n.id);
+                const recipients = Number(g?.recipients ?? 0);
+                const delivered = Number(g?.delivered ?? 0);
+                const opened = Number(g?.opened ?? 0);
+                const clicked = Number(g?.clicked ?? 0);
+                const denom = delivered > 0 ? delivered : recipients;
+                return {
+                    id: n.id, slug: n.slug, subject: n.subject, sentAt: n.sentAt,
+                    recipients, delivered, opened, clicked,
+                    openRate: rate(opened, denom),
+                    clickRate: rate(clicked, denom),
+                };
+            });
+
+            // A/B subject-line winner history: for issues that defined subjectB,
+            // split engagement by the per-recipient subjectVariant.
+            const abIssues = sentIssues.filter((n) => n.subjectB);
+            if (abIssues.length > 0) {
+                const abIds = abIssues.map((n) => n.id);
+                const variantGrouped = await ctx.db
+                    .select({
+                        newsletterId: newsletterRecipients.newsletterId,
+                        variant: newsletterRecipients.subjectVariant,
+                        recipients: count(),
+                        opened: count(newsletterRecipients.openedAt),
+                    })
+                    .from(newsletterRecipients)
+                    .where(inArray(newsletterRecipients.newsletterId, abIds))
+                    .groupBy(newsletterRecipients.newsletterId, newsletterRecipients.subjectVariant);
+                type VStat = { recipients: number; opened: number };
+                const abMap = new Map<string, { A: VStat; B: VStat }>();
+                for (const row of variantGrouped) {
+                    const entry = abMap.get(row.newsletterId) ?? {
+                        A: { recipients: 0, opened: 0 },
+                        B: { recipients: 0, opened: 0 },
+                    };
+                    if (row.variant === "A" || row.variant === "B") {
+                        entry[row.variant].recipients += Number(row.recipients);
+                        entry[row.variant].opened += Number(row.opened);
+                    }
+                    abMap.set(row.newsletterId, entry);
+                }
+                abHistory = abIssues.map((n) => {
+                    const e = abMap.get(n.id) ?? {
+                        A: { recipients: 0, opened: 0 },
+                        B: { recipients: 0, opened: 0 },
+                    };
+                    const aOpenRate = rate(e.A.opened, e.A.recipients);
+                    const bOpenRate = rate(e.B.opened, e.B.recipients);
+                    let winner: "A" | "B" | "tie" | null = null;
+                    if (e.A.recipients > 0 && e.B.recipients > 0) {
+                        winner = aOpenRate > bOpenRate ? "A" : bOpenRate > aOpenRate ? "B" : "tie";
+                    }
+                    return {
+                        id: n.id, subject: n.subject, subjectB: n.subjectB ?? "", sentAt: n.sentAt,
+                        aRecipients: e.A.recipients, aOpened: e.A.opened, aOpenRate,
+                        bRecipients: e.B.recipients, bOpened: e.B.opened, bOpenRate,
+                        winner,
+                    };
+                }).reverse(); // newest-first for display
+            }
+        }
+
+        // Best-performing issues: by open rate, require a minimum recipient
+        // floor so a tiny send doesn't top the chart on a fluke.
+        const MIN_RECIPIENTS = 5;
+        const bestIssues = [...performance]
+            .filter((p) => p.recipients >= MIN_RECIPIENTS)
+            .sort((a, b) => b.openRate - a.openRate)
+            .slice(0, 5);
+
+        return {
+            growth,
+            performance,
+            bestIssues,
+            abHistory,
+            hasSends: performance.length > 0,
         };
     }),
 });
