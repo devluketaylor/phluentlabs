@@ -15,6 +15,7 @@ import { subscribers } from "@/db/schemas/subscribers";
 import { pageViews } from "@/db/schemas/page-views";
 import { shareClicks } from "@/db/schemas/share-clicks";
 import { issueReactions } from "@/db/schemas/issue-reactions";
+import { feedback } from "@/db/schemas/feedback";
 import { and, arrayContains, count, desc, eq, ilike, isNotNull, lte, or } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
@@ -285,6 +286,12 @@ export const adminNewsletterRouter = router({
                 ? Math.round((reactionTally.up / reactionTotal) * 1000) / 10
                 : 0;
 
+            // Free-form reader feedback left on this issue via the /feedback form.
+            const [{ feedbackTotal }] = await ctx.db
+                .select({ feedbackTotal: count() })
+                .from(feedback)
+                .where(eq(feedback.newsletterId, nid));
+
             const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
             // Open/click rates are conventionally measured against delivered mail
             // (fall back to total recipients if no delivery events yet).
@@ -370,6 +377,7 @@ export const adminNewsletterRouter = router({
                     total: reactionTotal,
                     usefulRate,
                 },
+                feedback: { total: Number(feedbackTotal) },
                 rates: {
                     deliveryRate: rate(delivered, total),
                     openRate: rate(opened, denom),
@@ -524,11 +532,98 @@ export const adminNewsletterRouter = router({
 
             return { ok: true, to: input.to };
         }),
+
+    // Admin: list reader feedback captured from the public /feedback form (and
+    // the "just reply" prompt in the send footer). Newest-first, paginated,
+    // optionally filtered to a single issue. Joins the issue subject when the
+    // (nullable) FK still resolves.
+    feedbackList: adminProcedure
+        .input(
+            z.object({
+                limit: z.number().int().min(1).max(100).default(50),
+                offset: z.number().int().min(0).default(0),
+                newsletterId: z.string().trim().min(1).nullish(),
+            })
+        )
+        .query(async ({ input, ctx }) => {
+            const where = input.newsletterId
+                ? eq(feedback.newsletterId, input.newsletterId)
+                : undefined;
+
+            const [items, [{ total }]] = await Promise.all([
+                ctx.db
+                    .select({
+                        id: feedback.id,
+                        newsletterId: feedback.newsletterId,
+                        issueSlug: feedback.issueSlug,
+                        message: feedback.message,
+                        email: feedback.email,
+                        createdAt: feedback.createdAt,
+                        issueSubject: newsletters.subject,
+                    })
+                    .from(feedback)
+                    .leftJoin(newsletters, eq(feedback.newsletterId, newsletters.id))
+                    .where(where)
+                    .orderBy(desc(feedback.createdAt))
+                    .limit(input.limit)
+                    .offset(input.offset),
+                ctx.db.select({ total: count() }).from(feedback).where(where),
+            ]);
+
+            return { items, total };
+        }),
 });
 
 const PAGE_SIZE = 6;
 
 export const newsletterRouter = router({
+    // Public, no-auth reader feedback capture. Powers the /feedback form and the
+    // "just reply / share a note" prompt in the send footer. Closes the loop that
+    // raw email replies to a broadcast currently drop. Stores NO IP/user-agent;
+    // the only optional identifier is a reply-to email the reader chooses to add.
+    // If ?issue=<slug> is present and resolves to a PUBLISHED issue we attribute
+    // it; otherwise we still accept it as general feedback (issueSlug kept raw).
+    submitFeedback: publicProcedure
+        .input(
+            z.object({
+                message: z.string().trim().min(1).max(5000),
+                email: z.string().trim().email().max(320).optional().or(z.literal("")),
+                slug: z.string().trim().max(200).optional(),
+            })
+        )
+        .mutation(async ({ input, ctx }) => {
+            const rawSlug = input.slug?.trim() || null;
+
+            // Best-effort attribution: resolve the slug to a PUBLISHED issue id.
+            // Unknown/unpublished slugs still accept the feedback (unattributed),
+            // keeping the raw slug for context.
+            let newsletterId: string | null = null;
+            if (rawSlug) {
+                const [issue] = await ctx.db
+                    .select({ id: newsletters.id })
+                    .from(newsletters)
+                    .where(
+                        and(
+                            or(eq(newsletters.slug, rawSlug), eq(newsletters.id, rawSlug)),
+                            eq(newsletters.status, "sent")
+                        )
+                    );
+                newsletterId = issue?.id ?? null;
+            }
+
+            const email = input.email?.trim() ? input.email.trim() : null;
+
+            await ctx.db.insert(feedback).values({
+                id: crypto.randomUUID(),
+                newsletterId,
+                issueSlug: rawSlug,
+                message: input.message.trim(),
+                email,
+            });
+
+            return { ok: true };
+        }),
+
       createDraftViaApiKey: publicProcedure
     .input(
       z.object({

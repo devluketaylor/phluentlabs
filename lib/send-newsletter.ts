@@ -207,7 +207,18 @@ export async function sendNewsletterToSubscribers(
                 const unsubUrl = new URL("/unsubscribe", appUrl);
                 unsubUrl.searchParams.set("token", unsubToken);
 
-                const html = `${newsletter.html}<p style="margin-top:32px;font-size:12px;color:#888;">
+                // Feedback link → the public /feedback form, attributed to this
+                // issue's slug. Pair it with an explicit "just reply" prompt so
+                // a plain reply-to-this-email ALSO reads as invited (even though
+                // replies land in the from-address inbox, not the app).
+                const feedbackUrl = new URL("/feedback", appUrl);
+                if (newsletter.slug) feedbackUrl.searchParams.set("issue", newsletter.slug);
+
+                const html = `${newsletter.html}<p style="margin-top:32px;font-size:13px;line-height:1.6;color:#666;">
+                    Got a thought on this issue? Just hit reply — a real person reads every response — or
+                    <a href="${feedbackUrl.toString()}" style="color:#ff5c5c;">send a note here</a>.
+                </p>
+                <p style="margin-top:12px;font-size:12px;color:#888;">
                     <a href="${unsubUrl.toString()}">Unsubscribe</a>
                 </p>`;
 

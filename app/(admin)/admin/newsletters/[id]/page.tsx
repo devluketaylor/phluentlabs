@@ -21,6 +21,7 @@ import {
     Globe,
     Share2,
     ThumbsUp,
+    MessagesSquare,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -79,6 +80,7 @@ export default function NewsletterAnalyticsPage() {
     const web = data?.web;
     const shares = data?.shares;
     const reactions = data?.reactions;
+    const feedback = data?.feedback;
 
     const platformLabels: Record<string, string> = {
         x: "X / Twitter",
@@ -361,6 +363,47 @@ export default function NewsletterAnalyticsPage() {
                     ) : (
                         <p className="text-sm text-muted-foreground">
                             No reader feedback recorded yet.
+                        </p>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Written feedback — free-form notes readers left via the /feedback
+                form (or the reply prompt in the send footer) for this issue. */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <MessagesSquare className="size-4 text-primary" />
+                        Written feedback
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {isLoading || !feedback ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-8 w-24" />
+                            <Skeleton className="h-4 w-full" />
+                        </div>
+                    ) : feedback.total > 0 ? (
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                                <MessagesSquare className="size-6 text-primary" />
+                                <span className="text-2xl font-semibold">
+                                    {feedback.total.toLocaleString()}
+                                </span>
+                                <span className="text-sm text-muted-foreground">
+                                    written {feedback.total === 1 ? "note" : "notes"}
+                                </span>
+                            </div>
+                            <Link
+                                href="/admin/feedback"
+                                className="text-sm font-medium text-[#ff5c5c] hover:underline"
+                            >
+                                Read all →
+                            </Link>
+                        </div>
+                    ) : (
+                        <p className="text-sm text-muted-foreground">
+                            No written feedback for this issue yet.
                         </p>
                     )}
                 </CardContent>
