@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { z } from "zod";
 import { trpc } from "@/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -13,11 +14,27 @@ const emailSchema = z.string().email();
  * Lightweight subscribe CTA for the bottom of a public issue page.
  * Converts search/social readers into subscribers. Uses the same
  * subscribe.request mutation as the homepage; email-only for low friction.
+ *
+ * Wrapped in Suspense because useSearchParams (for ?ref= referral attribution)
+ * opts the subtree into client-side rendering.
  */
 export function IssueSubscribeCta() {
+    return (
+        <React.Suspense fallback={null}>
+            <IssueSubscribeCtaInner />
+        </React.Suspense>
+    );
+}
+
+function IssueSubscribeCtaInner() {
     const [email, setEmail] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [done, setDone] = useState(false);
+
+    // Referral attribution: honour a ?ref=<code> link so shares from an issue
+    // page still credit the referrer, matching the homepage behaviour.
+    const searchParams = useSearchParams();
+    const ref = searchParams.get("ref")?.trim() || undefined;
 
     const subscribe = trpc.subscribe.request.useMutation();
     const countQuery = trpc.subscribe.count.useQuery(undefined, {
@@ -34,7 +51,7 @@ export function IssueSubscribeCta() {
             return;
         }
         try {
-            await subscribe.mutateAsync({ email: parsed.data });
+            await subscribe.mutateAsync({ email: parsed.data, ref });
             setDone(true);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Something went wrong.");

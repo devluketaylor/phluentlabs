@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Rss } from "lucide-react";
 import { IssuesArchive, type ArchiveIssue } from "@/components/issues-archive";
+import { StickySubscribe } from "@/components/sticky-subscribe";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://phluentlabs.com";
 const PAGE_SIZE = 20;
@@ -153,6 +154,9 @@ export default async function IssuesArchivePage({ searchParams }: Props) {
             </header>
 
             <IssuesArchive issues={issues} pageSize={PAGE_SIZE} />
+
+            {/* Dismissible floating subscribe affordance for archive browsers. */}
+            <StickySubscribe />
         </div>
     );
 }

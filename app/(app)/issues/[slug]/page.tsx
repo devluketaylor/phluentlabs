@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import { IssueShare } from "@/components/issue-share";
 import { IssueSubscribeCta } from "@/components/issue-subscribe-cta";
+import { StickySubscribe } from "@/components/sticky-subscribe";
 import { PageViewBeacon } from "@/components/page-view-beacon";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -226,6 +227,10 @@ export default async function IssuePage({ params }: Props) {
             <IssueNav slug={issue.slug} sentAt={issue.sentAt} createdAt={issue.createdAt} />
 
             <IssueSubscribeCta />
+
+            {/* Dismissible floating subscribe affordance — appears after scroll,
+                remembers dismissal in localStorage. */}
+            <StickySubscribe />
         </div>
     );
 }
