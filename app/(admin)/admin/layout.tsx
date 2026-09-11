@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { normalizeRole } from "@/lib/roles";
+import { CHANGE_PASSWORD_PATH, sessionMustResetPassword } from "@/lib/must-reset-password";
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
     const session = await auth.api.getSession({ headers: await headers() });
@@ -11,8 +13,13 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     if (!session) {
         redirect("/auth/login")
     }
-    if (session.user.role !== "admin") {
+    // Any admin-area role (owner/admin/editor/viewer) may reach the panel.
+    if (!normalizeRole(session.user.role)) {
         redirect("/auth/forbidden");
+    }
+    // Force a temp-password reset before any admin page renders.
+    if (sessionMustResetPassword(session)) {
+        redirect(CHANGE_PASSWORD_PATH);
     }
 
     return (

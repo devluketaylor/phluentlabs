@@ -30,14 +30,18 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { Copy, Plus, Users } from "lucide-react";
+import { Plus, Users } from "lucide-react";
 import {
     ADMIN_ROLES,
     type AdminRole,
     ROLE_LABELS,
     canAssignRole,
+    canInvite,
     canManageMemberWithRole,
+    invitableRolesFor,
+    type InvitableRole,
 } from "@/lib/roles";
+import { Mail } from "lucide-react";
 
 function formatWhen(value: unknown) {
     if (!value) return "—";
@@ -68,28 +72,42 @@ export const TeamTable = () => {
     const actorRole = list.data?.actorRole;
     const actorId = list.data?.actorId;
     const members = useMemo(() => list.data?.members ?? [], [list.data]);
+    // Owners AND admins can invite; only owners can re-role/remove members.
     const canManageTeam = actorRole === "owner";
+    const canInviteMembers = actorRole ? canInvite(actorRole) : false;
 
-    // Roles the current actor is allowed to grant.
+    // Roles the current actor is allowed to grant via an INVITE. `owner` is
+    // never in this list (it's a single, non-transferable role), so the UI can
+    // never offer it. Admins are capped at `admin`.
     const assignableRoles = useMemo(
-        () => (actorRole ? ADMIN_ROLES.filter((r) => canAssignRole(actorRole, r)) : []),
+        () => (actorRole ? invitableRolesFor(actorRole) : []),
         [actorRole],
     );
 
     const [inviteOpen, setInviteOpen] = useState(false);
     const [email, setEmail] = useState("");
     const [name, setName] = useState("");
-    const [role, setRole] = useState<AdminRole>("editor");
-    // The temp password is shown exactly once, right after invite.
-    const [tempPassword, setTempPassword] = useState<string | null>(null);
-    const [invitedEmail, setInvitedEmail] = useState<string>("");
+    const [role, setRole] = useState<InvitableRole>("editor");
+    // After a successful invite we show a "sent" confirmation (the temp password
+    // travels by email and is never shown in the UI).
+    const [sentTo, setSentTo] = useState<string | null>(null);
+    const [sentOk, setSentOk] = useState<boolean>(true);
 
     const invite = trpc.adminTeam.invite.useMutation({
         onSuccess: (data) => {
-            setTempPassword(data.tempPassword);
-            setInvitedEmail(data.email);
+            setSentTo(data.email);
+            setSentOk(data.emailSent);
             setEmail("");
             setName("");
+            if (data.emailSent) {
+                toast.success(`Invite emailed to ${data.email}`);
+            } else {
+                toast.error(
+                    data.emailError
+                        ? `Member created, but the invite email failed: ${data.emailError}`
+                        : "Member created, but the invite email failed to send.",
+                );
+            }
             void utils.adminTeam.list.invalidate();
         },
         onError: (e) => toast.error(e.message),
@@ -111,25 +129,20 @@ export const TeamTable = () => {
         onError: (e) => toast.error(e.message),
     });
 
-    const copy = async (text: string) => {
-        try {
-            await navigator.clipboard.writeText(text);
-            toast.success("Copied to clipboard");
-        } catch {
-            toast.error("Couldn't copy — copy it manually");
-        }
-    };
-
     return (
         <div className="space-y-4">
-            {canManageTeam && (
+            {canInviteMembers && (
                 <div className="flex items-center justify-end">
                     <Button
                         onClick={() => {
-                            setTempPassword(null);
+                            setSentTo(null);
                             setEmail("");
                             setName("");
-                            setRole(assignableRoles.includes("editor") ? "editor" : assignableRoles[0] ?? "viewer");
+                            setRole(
+                                assignableRoles.includes("editor")
+                                    ? "editor"
+                                    : assignableRoles[0] ?? "viewer",
+                            );
                             setInviteOpen(true);
                         }}
                     >
@@ -255,40 +268,50 @@ export const TeamTable = () => {
                 {list.error && <div className="p-4 text-sm text-destructive">{list.error.message}</div>}
             </Card>
 
-            {!canManageTeam && !list.isLoading && (
+            {!canInviteMembers && !list.isLoading && (
                 <p className="text-xs text-muted-foreground">
-                    Only owners can invite, re-role, or remove team members.
+                    Only owners and admins can invite team members. Re-roling and removing
+                    members is owner-only.
                 </p>
             )}
 
             <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>{tempPassword ? "Share these credentials" : "Invite a team member"}</DialogTitle>
+                        <DialogTitle>{sentTo ? "Invitation sent" : "Invite a team member"}</DialogTitle>
                         <DialogDescription>
-                            {tempPassword
-                                ? "This temporary password is shown only once. Share it securely — the member should change it after signing in."
-                                : "Create a new admin account. They'll sign in with the email + temporary password you share."}
+                            {sentTo
+                                ? "We've emailed them a temporary password. They'll be asked to set a new one the first time they sign in."
+                                : "Create a new admin account. We'll email them a temporary password — they'll set their own on first sign-in."}
                         </DialogDescription>
                     </DialogHeader>
 
-                    {tempPassword ? (
+                    {sentTo ? (
                         <div className="space-y-3">
-                            <div className="space-y-1">
-                                <Label>Email</Label>
-                                <code className="block overflow-x-auto rounded bg-muted px-2 py-2 font-mono text-xs">
-                                    {invitedEmail}
-                                </code>
-                            </div>
-                            <div className="space-y-1">
-                                <Label>Temporary password</Label>
-                                <div className="flex items-center gap-2">
-                                    <code className="flex-1 overflow-x-auto rounded bg-muted px-2 py-2 font-mono text-xs">
-                                        {tempPassword}
-                                    </code>
-                                    <Button variant="secondary" size="sm" onClick={() => copy(tempPassword)}>
-                                        <Copy className="size-4" />
-                                    </Button>
+                            <div className="flex items-start gap-3 rounded-md border p-3">
+                                <Mail className="mt-0.5 size-5 text-[#ff5c5c]" />
+                                <div className="space-y-1 text-sm">
+                                    {sentOk ? (
+                                        <>
+                                            <p className="font-medium">Invite emailed</p>
+                                            <p className="text-muted-foreground">
+                                                A temporary password was sent to{" "}
+                                                <span className="font-mono">{sentTo}</span>. They'll be forced
+                                                to change it on first login.
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className="font-medium text-destructive">
+                                                Account created, email failed
+                                            </p>
+                                            <p className="text-muted-foreground">
+                                                We couldn't email{" "}
+                                                <span className="font-mono">{sentTo}</span>. You can remove and
+                                                re-invite them to try again.
+                                            </p>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -316,7 +339,7 @@ export const TeamTable = () => {
                             </div>
                             <div className="space-y-2">
                                 <Label>Role</Label>
-                                <Select value={role} onValueChange={(v) => setRole(v as AdminRole)}>
+                                <Select value={role} onValueChange={(v) => setRole(v as InvitableRole)}>
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>
@@ -333,7 +356,7 @@ export const TeamTable = () => {
                     )}
 
                     <DialogFooter>
-                        {tempPassword ? (
+                        {sentTo ? (
                             <Button onClick={() => setInviteOpen(false)}>Done</Button>
                         ) : (
                             <>

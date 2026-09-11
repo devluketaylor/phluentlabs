@@ -12,6 +12,11 @@ export const user = pgTable("user", {
     banned: boolean("banned"),
     banReason: text("ban_reason"),
     banExpires: timestamp("ban_expires"),
+    // Set true when a member is created via a team invite with a temporary
+    // password. While true, the member is forced to a change-password screen on
+    // first login and blocked from the rest of the app until they reset it.
+    // Additive/nullable so existing rows are unaffected (NULL == false).
+    mustResetPassword: boolean("must_reset_password"),
 });
 
 export const session = pgTable("session", {

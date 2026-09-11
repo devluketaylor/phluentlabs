@@ -7,11 +7,18 @@ import { auth } from "@/lib/auth";
 import { recordAudit } from "@/lib/audit";
 import {
     ADMIN_ROLES,
+    INVITABLE_ROLES,
     type AdminRole,
     canAssignRole,
+    canInvite,
+    canInviteRole,
     canManageMemberWithRole,
     normalizeRole,
 } from "@/lib/roles";
+import { Resend } from "resend";
+import { renderTeamInviteEmail } from "@/lib/emails/team-invite";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Team / multi-admin management. Every member of the `user` table is an admin
 // of the panel; this router lets owners (and admins, for lower roles) invite,
@@ -19,6 +26,10 @@ import {
 // role RANK so a lower-ranked actor can never escalate or touch a peer/superior.
 
 const roleEnum = z.enum(ADMIN_ROLES);
+// Invites may ONLY grant admin/editor/viewer. `owner` is a single,
+// non-transferable role and is rejected at the schema boundary too, so a
+// hand-crafted request can never even reach the handler with role="owner".
+const inviteRoleEnum = z.enum(INVITABLE_ROLES);
 
 // FIRST-OWNER BOOTSTRAP: multi-admin roles are additive on top of a system
 // that historically had a single "admin". If NO owner exists yet, the existing
@@ -75,25 +86,36 @@ export const adminTeamRouter = router({
         };
     }),
 
-    // Invite = create a new admin user with an initial password (shown ONCE,
-    // like an API key). Owner-gated. You can only assign a role you're allowed
-    // to grant (never above your own rank; only owners can mint owners).
+    // Invite = create a new admin user with a generated TEMPORARY password that
+    // is EMAILED to them (never returned to the client). Owner + admin may
+    // invite; an admin's max grantable role is `admin`; `owner` can NEVER be
+    // granted via an invite (enforced by the schema enum AND canInviteRole).
+    // The new member is flagged `mustResetPassword` so they're forced to set a
+    // real password on first login.
     invite: adminProcedure
         .input(
             z.object({
                 email: z.string().trim().toLowerCase().email(),
                 name: z.string().trim().min(1).max(120),
-                role: roleEnum.default("editor"),
-                password: z.string().min(8).max(200).optional(),
+                role: inviteRoleEnum.default("editor"),
             }),
         )
         .mutation(async ({ input, ctx }) => {
             const actorRole = await effectiveActorRole(ctx);
-            requireTeamManager(actorRole);
-            if (!canAssignRole(actorRole, input.role)) {
+            // Only owner/admin may invite (editors + viewers cannot).
+            if (!canInvite(actorRole)) {
                 throw new TRPCError({
                     code: "FORBIDDEN",
-                    message: `You can't assign the "${input.role}" role.`,
+                    message: "You don't have permission to invite members.",
+                });
+            }
+            // Enforce the invite grant rules server-side: never owner, admin
+            // capped at admin. (inviteRoleEnum already rejects "owner", this is
+            // the belt-and-suspenders capability check.)
+            if (!canInviteRole(actorRole, input.role)) {
+                throw new TRPCError({
+                    code: "FORBIDDEN",
+                    message: `You can't invite someone as "${input.role}".`,
                 });
             }
 
@@ -108,10 +130,10 @@ export const adminTeamRouter = router({
                 });
             }
 
-            // Generate a strong temporary password if the inviter didn't supply
-            // one. Surfaced to the inviter exactly once so they can share it.
-            const tempPassword =
-                input.password ?? `Pl-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+            // Generate a strong temporary password. It is NEVER returned to the
+            // client — it is emailed to the invitee, who must change it on first
+            // login. Mixed-case + digits + a symbol to satisfy typical policies.
+            const tempPassword = `Pl-${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 
             // Authorization is already enforced by ownerProcedure above. Create
             // the user + hashed credential via better-auth's internal adapter
@@ -137,6 +159,10 @@ export const adminTeamRouter = router({
                     accountId: createdId,
                     password: hashed,
                 });
+                // Force a password change on first login.
+                await authCtx.internalAdapter.updateUser(createdId, {
+                    mustResetPassword: true,
+                });
             } catch (e: any) {
                 throw new TRPCError({
                     code: "INTERNAL_SERVER_ERROR",
@@ -146,14 +172,51 @@ export const adminTeamRouter = router({
                 });
             }
 
-            // Ensure the stored role is exactly our intended tier.
-            await ctx.db.update(user).set({ role: input.role }).where(eq(user.id, createdId));
+            // Ensure the stored role + reset flag are exactly what we intend
+            // (belt-and-suspenders in case the adapter ignored a field above).
+            await ctx.db
+                .update(user)
+                .set({ role: input.role, mustResetPassword: true })
+                .where(eq(user.id, createdId));
+
+            // Email the invite + temporary password via the shared Resend layer.
+            // We do NOT return the password to the client — it only travels by
+            // email. A send failure is surfaced but the account still exists
+            // (an owner can re-issue by removing + re-inviting).
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://phluentlabs.com";
+            const loginUrl = `${appUrl.replace(/\/$/, "")}/auth/login`;
+            const { subject, html, text } = renderTeamInviteEmail({
+                name: input.name,
+                email: input.email,
+                tempPassword,
+                role: input.role,
+                loginUrl,
+                invitedBy: (ctx as any).adminEmail ?? null,
+            });
+            let emailSent = false;
+            let emailError: string | null = null;
+            try {
+                const res: any = await resend.emails.send({
+                    from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
+                    to: input.email,
+                    subject,
+                    html,
+                    text,
+                });
+                if (res?.error) {
+                    emailError = res.error?.message ?? String(res.error);
+                } else {
+                    emailSent = true;
+                }
+            } catch (e: any) {
+                emailError = e?.message ?? "Failed to send invite email.";
+            }
 
             await recordAudit(ctx, {
                 action: "team.invite",
                 targetType: "user",
                 targetId: createdId,
-                metadata: { email: input.email, role: input.role },
+                metadata: { email: input.email, role: input.role, emailSent },
             });
 
             return {
@@ -161,9 +224,59 @@ export const adminTeamRouter = router({
                 email: input.email,
                 name: input.name,
                 role: input.role,
-                // The ONLY time this password is exposed.
-                tempPassword,
+                // Whether the invite email actually sent. The temp password is
+                // intentionally NOT returned — it only travels by email.
+                emailSent,
+                emailError,
             };
+        }),
+
+    // First-login forced password change. The invited member signs in with the
+    // temp password (which sets `mustResetPassword`), is gated to the change-
+    // password screen, and calls this to set a real password. We delegate the
+    // credential rotation to better-auth's own `changePassword` (verifies the
+    // current/temp password + re-hashes), then clear the reset flag. Any
+    // admin-area role may call this for THEIR OWN account.
+    changeInitialPassword: adminProcedure
+        .input(
+            z.object({
+                currentPassword: z.string().min(1).max(200),
+                newPassword: z.string().min(8).max(200),
+            }),
+        )
+        .mutation(async ({ input, ctx }) => {
+            const actorId = (ctx as any).adminUserId as string;
+            try {
+                // Verifies currentPassword against the signed-in user + rehashes
+                // the new one. Throws APIError on a wrong current password.
+                await auth.api.changePassword({
+                    headers: (ctx as any).headers as Headers,
+                    body: {
+                        currentPassword: input.currentPassword,
+                        newPassword: input.newPassword,
+                        revokeOtherSessions: true,
+                    },
+                });
+            } catch (e: any) {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: e?.message ?? "Couldn't change your password.",
+                });
+            }
+
+            // Clear the forced-reset flag so the gate lets them through.
+            await ctx.db
+                .update(user)
+                .set({ mustResetPassword: false })
+                .where(eq(user.id, actorId));
+
+            await recordAudit(ctx, {
+                action: "team.resetInitialPassword",
+                targetType: "user",
+                targetId: actorId,
+            });
+
+            return { ok: true };
         }),
 
     // Change a member's role. Owner-gated. Can't touch yourself, can't act on a
