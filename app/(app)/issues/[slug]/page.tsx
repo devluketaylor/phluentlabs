@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import type { Metadata } from "next";
 import { IssueShare } from "@/components/issue-share";
+import { IssueReactions } from "@/components/issue-reactions";
 import { IssueSubscribeCta } from "@/components/issue-subscribe-cta";
 import { StickySubscribe } from "@/components/sticky-subscribe";
 import { PageViewBeacon } from "@/components/page-view-beacon";
@@ -218,6 +219,10 @@ export default async function IssuePage({ params }: Props) {
                 />
 
                 <IssueShare url={canonical} title={issue.subject} slug={issue.slug ?? issue.id} />
+
+                {/* One-tap anonymous "was this useful?" feedback. No PII;
+                    per-reader dedupe is client-side (localStorage). */}
+                <IssueReactions slug={issue.slug ?? issue.id} />
             </article>
 
             {/* Records a web page-view (distinct from email opens). Fire-and-forget,

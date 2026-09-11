@@ -20,6 +20,7 @@ import {
     Eye,
     Globe,
     Share2,
+    ThumbsUp,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -77,6 +78,7 @@ export default function NewsletterAnalyticsPage() {
     const ab = data?.abTest;
     const web = data?.web;
     const shares = data?.shares;
+    const reactions = data?.reactions;
 
     const platformLabels: Record<string, string> = {
         x: "X / Twitter",
@@ -304,6 +306,62 @@ export default function NewsletterAnalyticsPage() {
                                 </p>
                             )}
                         </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Reader reactions — anonymous one-tap "was this useful?" feedback
+                on the public issue page. Coarse up / so-so / down tally. */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <ThumbsUp className="size-4 text-primary" />
+                        Reader feedback
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {isLoading || !reactions ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-8 w-24" />
+                            <Skeleton className="h-4 w-full" />
+                        </div>
+                    ) : reactions.total > 0 ? (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2">
+                                <ThumbsUp className="size-6 text-primary" />
+                                <span className="text-2xl font-semibold">
+                                    {reactions.usefulRate}%
+                                </span>
+                                <span className="text-sm text-muted-foreground">
+                                    found this useful ({reactions.total.toLocaleString()}{" "}
+                                    {reactions.total === 1 ? "response" : "responses"})
+                                </span>
+                            </div>
+                            <ul className="divide-y text-sm">
+                                <li className="flex items-center justify-between py-2">
+                                    <span>Useful</span>
+                                    <span className="font-medium">
+                                        {reactions.up.toLocaleString()}
+                                    </span>
+                                </li>
+                                <li className="flex items-center justify-between py-2">
+                                    <span>So-so</span>
+                                    <span className="font-medium">
+                                        {reactions.mid.toLocaleString()}
+                                    </span>
+                                </li>
+                                <li className="flex items-center justify-between py-2">
+                                    <span>Not really</span>
+                                    <span className="font-medium">
+                                        {reactions.down.toLocaleString()}
+                                    </span>
+                                </li>
+                            </ul>
+                        </div>
+                    ) : (
+                        <p className="text-sm text-muted-foreground">
+                            No reader feedback recorded yet.
+                        </p>
                     )}
                 </CardContent>
             </Card>
