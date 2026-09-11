@@ -1,9 +1,10 @@
 import {publicProcedure, router} from "@/trpc/server";
 import {z} from "zod";
 import {subscribers} from "@/db/schemas/subscribers";
-import {count, eq} from "drizzle-orm";
+import {and, count, eq} from "drizzle-orm";
 import {signSubscriberToken, verifySubscriberToken} from "@/lib/subscriber-token";
 import {generateReferralCode} from "@/lib/referral";
+import {computeReferralProgress} from "@/lib/referral-tiers";
 import type {db as Db} from "@/db/client";
 import {Resend} from "resend";
 import {renderConfirmEmail} from "@/lib/emails/confirm-email";
@@ -208,12 +209,64 @@ export const subscribeRouter = router({
                         .where(eq(subscribers.id, me.id));
                 }
 
+                // Count only CONFIRMED referrals (subscribed) toward reward
+                // tiers — a pending signup shouldn't unlock a milestone.
                 const [{ referred }] = await ctx.db
                     .select({ referred: count() })
                     .from(subscribers)
-                    .where(eq(subscribers.referredBy, me.id));
+                    .where(and(
+                        eq(subscribers.referredBy, me.id),
+                        eq(subscribers.status, "subscribed"),
+                    ));
 
-                return { referralCode, referralCount: referred };
+                return {
+                    referralCode,
+                    referralCount: referred,
+                    progress: computeReferralProgress(referred),
+                };
+            }),
+
+        // Preferences-token variant of the referral progress surface. The
+        // preferences center is handed a "prefs"-scoped token (not "confirm"),
+        // so it can't call myReferral; this returns the same code + confirmed
+        // referral count + tier progress for the caller's OWN row.
+        myReferralByPrefs: publicProcedure
+            .input(z.object({ token: z.string().min(1) }))
+            .query(async ({ input, ctx }) => {
+                const payload = await verifySubscriberToken(input.token);
+                if (payload.scope !== "prefs") throw new Error("Invalid token")
+
+                const [me] = await ctx.db
+                    .select({
+                        id: subscribers.id,
+                        referralCode: subscribers.referralCode,
+                    })
+                    .from(subscribers)
+                    .where(eq(subscribers.id, payload.subId));
+                if (!me) throw new Error("Subscriber not found");
+
+                let referralCode = me.referralCode;
+                if (!referralCode) {
+                    referralCode = await makeUniqueReferralCode(ctx.db);
+                    await ctx.db
+                        .update(subscribers)
+                        .set({ referralCode })
+                        .where(eq(subscribers.id, me.id));
+                }
+
+                const [{ referred }] = await ctx.db
+                    .select({ referred: count() })
+                    .from(subscribers)
+                    .where(and(
+                        eq(subscribers.referredBy, me.id),
+                        eq(subscribers.status, "subscribed"),
+                    ));
+
+                return {
+                    referralCode,
+                    referralCount: referred,
+                    progress: computeReferralProgress(referred),
+                };
             }),
 
         unsubscribe: publicProcedure

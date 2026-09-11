@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Check, Pause, Play, UserX } from "lucide-react";
+import { Check, Gift, Pause, Play, UserX } from "lucide-react";
+import { ReferralMilestones } from "@/components/referral-milestones";
 
 function PreferencesContent() {
     const params = useSearchParams();
@@ -22,6 +23,12 @@ function PreferencesContent() {
     );
 
     const update = trpc.subscribe.updatePreferences.useMutation();
+
+    // Referral standing + reward-tier progress (prefs-token variant).
+    const referral = trpc.subscribe.myReferralByPrefs.useQuery(
+        { token },
+        { enabled: !!token, retry: false, staleTime: 60 * 1000 },
+    );
 
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
@@ -124,6 +131,24 @@ function PreferencesContent() {
                     {statusLabel}
                 </span>
             </div>
+
+            {/* Referral standing + reward milestones */}
+            {referral.data?.progress && status !== "unsubscribed" ? (
+                <div className="mt-6 rounded-xl border bg-card p-4">
+                    <div className="flex items-center gap-2">
+                        <Gift className="size-4 text-primary" />
+                        <p className="text-sm font-medium">Your referrals</p>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        You&apos;ve referred{" "}
+                        <span className="font-semibold text-foreground">
+                            {referral.data.referralCount}
+                        </span>{" "}
+                        developer{referral.data.referralCount === 1 ? "" : "s"}.
+                    </p>
+                    <ReferralMilestones progress={referral.data.progress} />
+                </div>
+            ) : null}
 
             {/* Name editor */}
             <div className="mt-6 space-y-4">

@@ -8,6 +8,7 @@ import { trpc } from "@/trpc/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ReferralMilestones } from "@/components/referral-milestones";
 
 /**
  * ReferralShare — the subscriber-facing "your referral link" surface.
@@ -107,6 +108,10 @@ export function ReferralShare({ token }: { token: string }) {
                     </span>
                 )}
             </div>
+
+            {referral.data?.progress ? (
+                <ReferralMilestones progress={referral.data.progress} />
+            ) : null}
         </div>
     );
 }
