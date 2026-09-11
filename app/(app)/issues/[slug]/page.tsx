@@ -217,7 +217,7 @@ export default async function IssuePage({ params }: Props) {
                     dangerouslySetInnerHTML={{ __html: issue.html }}
                 />
 
-                <IssueShare url={canonical} title={issue.subject} />
+                <IssueShare url={canonical} title={issue.subject} slug={issue.slug ?? issue.id} />
             </article>
 
             {/* Records a web page-view (distinct from email opens). Fire-and-forget,

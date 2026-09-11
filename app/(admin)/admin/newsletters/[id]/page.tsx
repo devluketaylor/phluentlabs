@@ -19,6 +19,7 @@ import {
     Trophy,
     Eye,
     Globe,
+    Share2,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -75,6 +76,14 @@ export default function NewsletterAnalyticsPage() {
     const r = data?.rates;
     const ab = data?.abTest;
     const web = data?.web;
+    const shares = data?.shares;
+
+    const platformLabels: Record<string, string> = {
+        x: "X / Twitter",
+        linkedin: "LinkedIn",
+        copy: "Copy link",
+        other: "Other",
+    };
 
     const bucketLabels: Record<string, string> = {
         search: "Search",
@@ -239,6 +248,59 @@ export default function NewsletterAnalyticsPage() {
                             ) : (
                                 <p className="text-sm text-muted-foreground">
                                     No web views recorded yet.
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Public share-clicks — taps on the issue's X / LinkedIn / copy-link
+                share row, distinct from email + web-view metrics above. */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <Share2 className="size-4 text-primary" />
+                        Shares
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {isLoading || !shares ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-8 w-24" />
+                            <Skeleton className="h-4 w-full" />
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2">
+                                <Share2 className="size-6 text-primary" />
+                                <span className="text-2xl font-semibold">
+                                    {shares.total.toLocaleString()}
+                                </span>
+                                <span className="text-sm text-muted-foreground">
+                                    share {shares.total === 1 ? "click" : "clicks"} from the archive
+                                </span>
+                            </div>
+                            {shares.channels.length > 0 ? (
+                                <div>
+                                    <p className="text-xs text-muted-foreground mb-2">Channel</p>
+                                    <ul className="divide-y text-sm">
+                                        {shares.channels.map((ch) => (
+                                            <li
+                                                key={ch.platform}
+                                                className="flex items-center justify-between py-2"
+                                            >
+                                                <span>{platformLabels[ch.platform] ?? ch.platform}</span>
+                                                <span className="font-medium">
+                                                    {ch.shares.toLocaleString()}
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">
+                                    No shares recorded yet.
                                 </p>
                             )}
                         </div>

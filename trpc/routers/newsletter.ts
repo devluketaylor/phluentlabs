@@ -13,6 +13,7 @@ import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
 import { pageViews } from "@/db/schemas/page-views";
+import { shareClicks } from "@/db/schemas/share-clicks";
 import { and, arrayContains, count, desc, eq, ilike, isNotNull, lte, or } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
@@ -249,6 +250,22 @@ export const adminNewsletterRouter = router({
                 views: Number(v.c),
             }));
 
+            // Public share-clicks for this issue (X / LinkedIn / copy-link taps
+            // on the archive page). Total + a per-channel breakdown.
+            const [[{ shareTotal }], sharesByPlatform] = await Promise.all([
+                ctx.db.select({ shareTotal: count() }).from(shareClicks).where(eq(shareClicks.newsletterId, nid)),
+                ctx.db
+                    .select({ platform: shareClicks.platform, c: count() })
+                    .from(shareClicks)
+                    .where(eq(shareClicks.newsletterId, nid))
+                    .groupBy(shareClicks.platform)
+                    .orderBy(desc(count())),
+            ]);
+            const shareChannels = sharesByPlatform.map((s) => ({
+                platform: s.platform ?? "other",
+                shares: Number(s.c),
+            }));
+
             const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
             // Open/click rates are conventionally measured against delivered mail
             // (fall back to total recipients if no delivery events yet).
@@ -326,6 +343,7 @@ export const adminNewsletterRouter = router({
                 newsletter,
                 counts: { recipients: total, delivered, opened, clicked, bounced, complained },
                 web: { views: Number(webViews), referrers },
+                shares: { total: Number(shareTotal), channels: shareChannels },
                 rates: {
                     deliveryRate: rate(delivered, total),
                     openRate: rate(opened, denom),
