@@ -49,9 +49,9 @@ export const metadata: Metadata = {
 };
 
 // Site-wide structured data. WebSite + Organization describe the brand and site
-// as a whole (distinct from per-page Article/Collection JSON-LD). A SearchAction
-// is intentionally omitted — there is no site-wide GET search endpoint (archive
-// search is client-side only), so advertising one would be inaccurate.
+// as a whole (distinct from per-page Article/Collection JSON-LD). The WebSite
+// SearchAction now points at the real server-side archive search endpoint
+// (/issues?q=…), enabling a Google sitelinks search box.
 const siteJsonLd = {
   "@context": "https://schema.org",
   "@graph": [
@@ -64,6 +64,14 @@ const siteJsonLd = {
         "What I'm noticing while building the web — a weekly newsletter for developers.",
       inLanguage: "en",
       publisher: { "@id": `${APP_URL}/#organization` },
+      potentialAction: {
+        "@type": "SearchAction",
+        target: {
+          "@type": "EntryPoint",
+          urlTemplate: `${APP_URL}/issues?q={search_term_string}`,
+        },
+        "query-input": "required name=search_term_string",
+      },
     },
     {
       "@type": "Organization",

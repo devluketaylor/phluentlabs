@@ -13,7 +13,7 @@ import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
 import { pageViews } from "@/db/schemas/page-views";
-import { and, arrayContains, count, desc, eq, isNotNull, lte } from "drizzle-orm";
+import { and, arrayContains, count, desc, eq, ilike, isNotNull, lte, or } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { TRPCError } from "@trpc/server";
@@ -586,5 +586,81 @@ export const newsletterRouter = router({
             ]);
 
             return { items, total, pageSize: PAGE_SIZE };
+        }),
+
+    // Real server-side archive search. Scans PUBLISHED issues only, matching the
+    // query against subject, preheader AND the body HTML (case-insensitive
+    // substring). Paginated server-side so it scales past the client cap and
+    // gives us a genuine GET-addressable search URL (wired into the WebSite
+    // SearchAction JSON-LD). Returns lightweight rows only — never the full HTML.
+    search: publicProcedure
+        .input(
+            z.object({
+                q: z.string().trim().max(200).default(""),
+                page: z.number().int().min(1).default(1),
+                pageSize: z.number().int().min(1).max(50).default(20),
+            })
+        )
+        .query(async ({ input, ctx }) => {
+            const offset = (input.page - 1) * input.pageSize;
+            const q = input.q;
+
+            // Always constrained to published issues; drafts never leak.
+            const publishedOnly = eq(newsletters.status, "sent");
+            // Build a match clause only when there's a query. A blank query falls
+            // back to "all published", so /issues?q= behaves like the plain archive.
+            const where = q
+                ? and(
+                      publishedOnly,
+                      or(
+                          ilike(newsletters.subject, `%${q}%`),
+                          ilike(newsletters.preheader, `%${q}%`),
+                          ilike(newsletters.html, `%${q}%`)
+                      )
+                  )
+                : publishedOnly;
+
+            const [rows, [{ total }]] = await Promise.all([
+                ctx.db
+                    .select({
+                        id: newsletters.id,
+                        slug: newsletters.slug,
+                        subject: newsletters.subject,
+                        preheader: newsletters.preheader,
+                        // Pulled only to derive reading time server-side; the full
+                        // HTML is NOT returned to the client.
+                        html: newsletters.html,
+                        sentAt: newsletters.sentAt,
+                        createdAt: newsletters.createdAt,
+                    })
+                    .from(newsletters)
+                    .where(where)
+                    .orderBy(desc(newsletters.sentAt), desc(newsletters.createdAt))
+                    .limit(input.pageSize)
+                    .offset(offset),
+                ctx.db
+                    .select({ total: count() })
+                    .from(newsletters)
+                    .where(where),
+            ]);
+
+            const items = rows.map((r) => {
+                const words = r.html
+                    .replace(/<[^>]*>/g, " ")
+                    .split(/\s+/)
+                    .filter(Boolean).length;
+                const readingMinutes = Math.max(1, Math.round(words / 220));
+                const dateMs = (r.sentAt ?? r.createdAt)?.getTime() ?? Date.now();
+                return {
+                    id: r.id,
+                    slug: r.slug ?? r.id,
+                    subject: r.subject,
+                    preheader: r.preheader,
+                    dateMs,
+                    readingMinutes,
+                };
+            });
+
+            return { items, total: total ?? items.length, page: input.page, pageSize: input.pageSize, q };
         }),
 });

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -31,37 +32,55 @@ function formatDate(ms: number) {
     });
 }
 
+// Build a /issues URL preserving/clearing q + page. Omitting empty params keeps
+// the canonical plain-archive URL clean (/issues rather than /issues?q=&page=1).
+function issuesHref(q: string, page: number) {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (page > 1) params.set("page", String(page));
+    const qs = params.toString();
+    return qs ? `/issues?${qs}` : "/issues";
+}
+
+/**
+ * Server-driven archive search + pagination. The actual filtering + paging
+ * happens server-side (see app/(app)/issues/page.tsx) so it scales past any
+ * client cap and /issues?q=… is a real, shareable, crawlable search URL wired
+ * into the WebSite SearchAction. This component only reflects the server results
+ * and pushes query/page changes into the URL.
+ */
 export function IssuesArchive({
     issues,
+    total,
+    page,
     pageSize = 20,
+    query,
 }: {
     issues: ArchiveIssue[];
+    total: number;
+    page: number;
     pageSize?: number;
+    query: string;
 }) {
-    const [query, setQuery] = React.useState("");
-    const [page, setPage] = React.useState(1);
+    const router = useRouter();
+    const [value, setValue] = React.useState(query);
 
-    // Filter by subject + preheader. Cheap client-side search across the (capped)
-    // published set — no extra network round-trips as the user types.
-    const filtered = React.useMemo(() => {
-        const q = query.trim().toLowerCase();
-        if (!q) return issues;
-        return issues.filter((i) => {
-            const hay = `${i.subject} ${i.preheader ?? ""}`.toLowerCase();
-            return hay.includes(q);
-        });
-    }, [issues, query]);
-
-    // Reset to page 1 whenever the query changes so results aren't hidden past
-    // the end of a stale page.
+    // Keep the input in sync if the URL query changes (e.g. back/forward nav).
     React.useEffect(() => {
-        setPage(1);
+        setValue(query);
     }, [query]);
 
-    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-    const safePage = Math.min(page, totalPages);
-    const start = (safePage - 1) * pageSize;
-    const visible = filtered.slice(start, start + pageSize);
+    const submit = React.useCallback(
+        (next: string) => {
+            const trimmed = next.trim();
+            // New search always resets to page 1.
+            router.push(issuesHref(trimmed, 1));
+        },
+        [router]
+    );
+
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(Math.max(1, page), totalPages);
 
     const getPageNumbers = (): (number | "...")[] => {
         if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
@@ -71,47 +90,65 @@ export function IssuesArchive({
         return [1, "...", safePage - 1, safePage, safePage + 1, "...", totalPages];
     };
 
-    if (!issues.length) {
-        return (
-            <p className="py-16 text-center text-sm text-muted-foreground">
-                No issues yet — check back soon.
-            </p>
-        );
-    }
+    const goto = (p: number) => router.push(issuesHref(query, p));
 
     return (
         <div className="space-y-6">
-            <div className="relative">
+            <form
+                onSubmit={(e) => {
+                    e.preventDefault();
+                    submit(value);
+                }}
+                role="search"
+                className="relative"
+            >
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                     type="search"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    name="q"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
                     placeholder="Search issues…"
                     aria-label="Search issues"
                     className="pl-9 pr-9"
                 />
-                {query && (
+                {value && (
                     <button
                         type="button"
-                        onClick={() => setQuery("")}
+                        onClick={() => {
+                            setValue("");
+                            submit("");
+                        }}
                         aria-label="Clear search"
                         className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
                     >
                         <X className="h-4 w-4" />
                     </button>
                 )}
-            </div>
+            </form>
 
-            {filtered.length === 0 ? (
-                <p className="py-12 text-center text-sm text-muted-foreground">
-                    No issues match{" "}
+            {query && (
+                <p className="text-sm text-muted-foreground">
+                    {total} result{total === 1 ? "" : "s"} for{" "}
                     <span className="font-medium text-foreground">“{query}”</span>.
                 </p>
+            )}
+
+            {issues.length === 0 ? (
+                query ? (
+                    <p className="py-12 text-center text-sm text-muted-foreground">
+                        No issues match{" "}
+                        <span className="font-medium text-foreground">“{query}”</span>.
+                    </p>
+                ) : (
+                    <p className="py-16 text-center text-sm text-muted-foreground">
+                        No issues yet — check back soon.
+                    </p>
+                )
             ) : (
                 <>
                     <ul className="space-y-3">
-                        {visible.map((issue) => (
+                        {issues.map((issue) => (
                             <li key={issue.id}>
                                 <Link
                                     href={`/issues/${issue.slug}`}
@@ -146,7 +183,11 @@ export function IssuesArchive({
                             <PaginationContent>
                                 <PaginationItem>
                                     <PaginationPrevious
-                                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                                        href={issuesHref(query, Math.max(1, safePage - 1))}
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            goto(Math.max(1, safePage - 1));
+                                        }}
                                     />
                                 </PaginationItem>
 
@@ -158,8 +199,12 @@ export function IssuesArchive({
                                     ) : (
                                         <PaginationItem key={p}>
                                             <PaginationLink
+                                                href={issuesHref(query, p as number)}
                                                 isActive={safePage === p}
-                                                onClick={() => setPage(p as number)}
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    goto(p as number);
+                                                }}
                                             >
                                                 {p}
                                             </PaginationLink>
@@ -169,9 +214,11 @@ export function IssuesArchive({
 
                                 <PaginationItem>
                                     <PaginationNext
-                                        onClick={() =>
-                                            setPage((p) => Math.min(totalPages, p + 1))
-                                        }
+                                        href={issuesHref(query, Math.min(totalPages, safePage + 1))}
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            goto(Math.min(totalPages, safePage + 1));
+                                        }}
                                     />
                                 </PaginationItem>
                             </PaginationContent>

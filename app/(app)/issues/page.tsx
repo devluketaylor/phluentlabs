@@ -1,6 +1,6 @@
 import { db } from "@/db/client";
 import { newsletters } from "@/db/schemas/newsletters";
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Rss } from "lucide-react";
@@ -40,32 +40,49 @@ export const metadata: Metadata = {
     },
 };
 
-type Props = { searchParams: Promise<{ page?: string }> };
+type Props = { searchParams: Promise<{ page?: string; q?: string }> };
 
-async function getIssues() {
-    // Public archive: only ever surface PUBLISHED ("sent") issues. Draft/scheduled
-    // content must never reach the browser. We pull the full published set (capped)
-    // so the client-side search can filter across everything without extra queries.
+// Server-side archive search. Scans PUBLISHED issues only, matching the query
+// against subject, preheader AND body HTML (case-insensitive substring),
+// paginated server-side so it scales past any client cap and gives us a real
+// GET-addressable search URL (/issues?q=). Draft/scheduled content never reaches
+// the browser. `total` is the count of MATCHING issues; `grandTotal` is the count
+// of all published issues (for the header line when no query is active).
+async function getIssues(q: string, page: number) {
     try {
-        const rows = await db
-            .select({
-                id: newsletters.id,
-                slug: newsletters.slug,
-                subject: newsletters.subject,
-                preheader: newsletters.preheader,
-                html: newsletters.html,
-                sentAt: newsletters.sentAt,
-                createdAt: newsletters.createdAt,
-            })
-            .from(newsletters)
-            .where(eq(newsletters.status, "sent"))
-            .orderBy(desc(newsletters.sentAt), desc(newsletters.createdAt))
-            .limit(500);
+        const publishedOnly = eq(newsletters.status, "sent");
+        const where = q
+            ? and(
+                  publishedOnly,
+                  or(
+                      ilike(newsletters.subject, `%${q}%`),
+                      ilike(newsletters.preheader, `%${q}%`),
+                      ilike(newsletters.html, `%${q}%`)
+                  )
+              )
+            : publishedOnly;
 
-        const [{ total }] = await db
-            .select({ total: count() })
-            .from(newsletters)
-            .where(eq(newsletters.status, "sent"));
+        const offset = (page - 1) * PAGE_SIZE;
+
+        const [rows, [{ total }], [{ total: grandTotal }]] = await Promise.all([
+            db
+                .select({
+                    id: newsletters.id,
+                    slug: newsletters.slug,
+                    subject: newsletters.subject,
+                    preheader: newsletters.preheader,
+                    html: newsletters.html,
+                    sentAt: newsletters.sentAt,
+                    createdAt: newsletters.createdAt,
+                })
+                .from(newsletters)
+                .where(where)
+                .orderBy(desc(newsletters.sentAt), desc(newsletters.createdAt))
+                .limit(PAGE_SIZE)
+                .offset(offset),
+            db.select({ total: count() }).from(newsletters).where(where),
+            db.select({ total: count() }).from(newsletters).where(publishedOnly),
+        ]);
 
         const issues: ArchiveIssue[] = rows.map((r) => {
             // Reading time: strip HTML, count words, ~220 wpm. Computed here so the
@@ -83,15 +100,21 @@ async function getIssues() {
             };
         });
 
-        return { issues, total: total ?? issues.length };
+        return {
+            issues,
+            total: total ?? issues.length,
+            grandTotal: grandTotal ?? total ?? issues.length,
+        };
     } catch {
-        return { issues: [] as ArchiveIssue[], total: 0 };
+        return { issues: [] as ArchiveIssue[], total: 0, grandTotal: 0 };
     }
 }
 
 export default async function IssuesArchivePage({ searchParams }: Props) {
-    await searchParams; // reserved for future server-side paging; keep the contract
-    const { issues, total } = await getIssues();
+    const sp = await searchParams;
+    const q = (sp.q ?? "").trim().slice(0, 200);
+    const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
+    const { issues, total, grandTotal } = await getIssues(q, page);
 
     // CollectionPage describing the archive, with an embedded ItemList that
     // enumerates every published issue (position-ordered, newest first). Good
@@ -146,14 +169,20 @@ export default async function IssuesArchivePage({ searchParams }: Props) {
                         RSS
                     </Link>
                 </div>
-                {total > 0 && (
+                {grandTotal > 0 && (
                     <p className="text-sm text-muted-foreground">
-                        {total} issue{total === 1 ? "" : "s"} published.
+                        {grandTotal} issue{grandTotal === 1 ? "" : "s"} published.
                     </p>
                 )}
             </header>
 
-            <IssuesArchive issues={issues} pageSize={PAGE_SIZE} />
+            <IssuesArchive
+                issues={issues}
+                total={total}
+                page={page}
+                pageSize={PAGE_SIZE}
+                query={q}
+            />
 
             {/* Dismissible floating subscribe affordance for archive browsers. */}
             <StickySubscribe />
