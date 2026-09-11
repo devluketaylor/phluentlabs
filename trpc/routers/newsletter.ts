@@ -19,6 +19,7 @@ import { feedback } from "@/db/schemas/feedback";
 import { and, arrayContains, count, desc, eq, ilike, isNotNull, lte, or } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
+import { signPreviewToken } from "@/lib/preview-token";
 import { TRPCError } from "@trpc/server";
 import { sendNewsletterToSubscribers } from "@/lib/send-newsletter";
 import { recordAudit } from "@/lib/audit";
@@ -172,6 +173,34 @@ export const adminNewsletterRouter = router({
                 targetId: input.id,
             });
             return { ok: true };
+        }),
+
+    // Mint a signed, expiring PREVIEW link that renders an UNSENT draft exactly
+    // as it will look, so a reviewer can proof it on any device before send.
+    // Read-only action (creates no data), so any admin-role member may proof —
+    // matches the Preview/Analytics buttons (adminProcedure). Sent issues are
+    // already public at /issues/<slug>, so we only mint for non-sent issues.
+    previewLink: adminProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .mutation(async ({ input, ctx }) => {
+            const [newsletter] = await ctx.db
+                .select({ id: newsletters.id, status: newsletters.status })
+                .from(newsletters)
+                .where(eq(newsletters.id, input.id));
+
+            if (!newsletter) {
+                throw new TRPCError({ code: "NOT_FOUND", message: "Newsletter not found" });
+            }
+            if (newsletter.status === "sent") {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: "This issue is already published — share its public /issues link instead.",
+                });
+            }
+
+            const token = await signPreviewToken({ newsletterId: newsletter.id });
+            const base = process.env.NEXT_PUBLIC_APP_URL ?? "https://phluentlabs.com";
+            return { url: `${base}/preview/${token}` };
         }),
 
     send: editorProcedure

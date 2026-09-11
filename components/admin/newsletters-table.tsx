@@ -32,7 +32,7 @@ import {
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Link2, Check } from "lucide-react";
 
 type NewsletterStatus = "draft" | "scheduled" | "sent";
 
@@ -172,6 +172,9 @@ export function NewslettersTable() {
                                             </Button>
                                         )}
                                         <PreviewNewsletterDialog newsletter={n} />
+                                        {n.status !== "sent" && (
+                                            <CopyPreviewLinkButton id={n.id} />
+                                        )}
                                         <TestSendDialog
                                             newsletter={n}
                                             onSendTest={(to) => sendTest.mutateAsync({ id: n.id, to })}
@@ -335,6 +338,41 @@ function ScheduleDialog({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+    );
+}
+
+// One-click "Copy preview link" for a non-sent draft: mints a signed, expiring
+// proof URL server-side (secret never leaves the server) and copies it to the
+// clipboard so a reviewer can proof the issue on any device before send.
+function CopyPreviewLinkButton({ id }: { id: string }) {
+    const [copied, setCopied] = useState(false);
+    const mint = trpc.adminNewsletter.previewLink.useMutation({
+        onSuccess: async ({ url }) => {
+            try {
+                await navigator.clipboard.writeText(url);
+                setCopied(true);
+                toast.success("Preview link copied to clipboard");
+                setTimeout(() => setCopied(false), 2000);
+            } catch {
+                // Clipboard blocked (e.g. insecure context) — surface the URL so
+                // the reviewer can still copy it manually.
+                toast.success("Preview link ready", { description: url, duration: 10000 });
+            }
+        },
+        onError: (err) => toast.error(err.message || "Failed to create preview link"),
+    });
+
+    return (
+        <Button
+            size="sm"
+            variant="outline"
+            title="Copy a shareable proof link (expires in 14 days)"
+            disabled={mint.isPending}
+            onClick={() => mint.mutate({ id })}
+        >
+            {copied ? <Check className="size-4" /> : <Link2 className="size-4" />}
+            Preview link
+        </Button>
     );
 }
 
