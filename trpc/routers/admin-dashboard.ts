@@ -1,5 +1,6 @@
+import { z } from "zod";
 import { adminProcedure, router } from "@/trpc/server";
-import { and, count, desc, eq, gte, isNotNull, lt, inArray, asc } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNotNull, lt, inArray, asc, or } from "drizzle-orm";
 import { subscribers } from "@/db/schemas/subscribers";
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
@@ -423,4 +424,123 @@ export const adminDashboardRouter = router({
             hasSends: performance.length > 0,
         };
     }),
+
+    // Editorial calendar / queue: scheduled + sent issues (plus drafts that
+    // carry a scheduledAt) placed on a month grid. Read-only; no schema.
+    // `month` is a 1-indexed month and `year` a full year; when omitted we
+    // default to the current month (server timezone). We return issues whose
+    // relevant date (scheduledAt for scheduled/draft, sentAt for sent, else
+    // createdAt) falls within the requested month, plus a small count of
+    // upcoming scheduled issues regardless of month for an at-a-glance queue.
+    calendar: adminProcedure
+        .input(
+            z
+                .object({
+                    year: z.number().int().min(2000).max(2100).optional(),
+                    month: z.number().int().min(1).max(12).optional(),
+                })
+                .optional()
+        )
+        .query(async ({ ctx, input }) => {
+            const now = new Date();
+            const year = input?.year ?? now.getFullYear();
+            const month = input?.month ?? now.getMonth() + 1; // 1-indexed
+
+            // Month window [start, end) in local server time.
+            const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
+            const end = new Date(year, month, 1, 0, 0, 0, 0);
+
+            // Pull issues that could land in this month: anything scheduled or
+            // sent within the window. We over-fetch a little (scheduled OR sent
+            // in range) then bucket in JS by the issue's effective date.
+            const rows = await ctx.db
+                .select({
+                    id: newsletters.id,
+                    slug: newsletters.slug,
+                    subject: newsletters.subject,
+                    status: newsletters.status,
+                    scheduledAt: newsletters.scheduledAt,
+                    sentAt: newsletters.sentAt,
+                    createdAt: newsletters.createdAt,
+                })
+                .from(newsletters)
+                .where(
+                    and(
+                        inArray(newsletters.status, ["scheduled", "sent"]),
+                        or(
+                            and(
+                                gte(newsletters.scheduledAt, start),
+                                lt(newsletters.scheduledAt, end)
+                            ),
+                            and(
+                                gte(newsletters.sentAt, start),
+                                lt(newsletters.sentAt, end)
+                            )
+                        )
+                    )
+                )
+                .orderBy(asc(newsletters.scheduledAt));
+
+            // Effective calendar date: sent issues sit on sentAt; scheduled on
+            // scheduledAt. Skip any without a usable in-window date.
+            const items = rows
+                .map((r) => {
+                    const dt =
+                        r.status === "sent"
+                            ? r.sentAt ?? r.scheduledAt
+                            : r.scheduledAt ?? r.sentAt;
+                    return dt ? { ...r, dateMs: dt.getTime() } : null;
+                })
+                .filter(
+                    (r): r is NonNullable<typeof r> =>
+                        r !== null && r.dateMs >= start.getTime() && r.dateMs < end.getTime()
+                )
+                .map((r) => ({
+                    id: r.id,
+                    slug: r.slug,
+                    subject: r.subject,
+                    status: r.status,
+                    dateMs: r.dateMs,
+                    // Local day-of-month (1..31) for grid placement.
+                    day: new Date(r.dateMs).getDate(),
+                }));
+
+            // Upcoming scheduled queue (next 5), independent of the viewed
+            // month, so the pipeline is visible even when browsing history.
+            const upcomingRows = await ctx.db
+                .select({
+                    id: newsletters.id,
+                    slug: newsletters.slug,
+                    subject: newsletters.subject,
+                    scheduledAt: newsletters.scheduledAt,
+                })
+                .from(newsletters)
+                .where(
+                    and(
+                        eq(newsletters.status, "scheduled"),
+                        gte(newsletters.scheduledAt, now)
+                    )
+                )
+                .orderBy(asc(newsletters.scheduledAt))
+                .limit(5);
+
+            const upcoming = upcomingRows
+                .filter((r) => r.scheduledAt)
+                .map((r) => ({
+                    id: r.id,
+                    slug: r.slug,
+                    subject: r.subject,
+                    dateMs: r.scheduledAt!.getTime(),
+                }));
+
+            return {
+                year,
+                month, // 1-indexed
+                daysInMonth: new Date(year, month, 0).getDate(),
+                // Weekday (0=Sun..6=Sat) the 1st of the month falls on, for grid offset.
+                firstWeekday: start.getDay(),
+                items,
+                upcoming,
+            };
+        }),
 });
