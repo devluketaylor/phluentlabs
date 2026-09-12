@@ -7,6 +7,7 @@ import { and, arrayContains, eq, inArray, ne } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { assignVariant } from "@/lib/ab-split";
+import { resolveCohortSubscribers, type EngagementCohort } from "@/lib/engagement-cohort";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -99,9 +100,10 @@ async function sendBatchWithRetry(
  */
 export async function sendNewsletterToSubscribers(
     newsletterId: string,
-    opts?: { tag?: string | null },
+    opts?: { tag?: string | null; cohort?: EngagementCohort | null },
 ): Promise<{ sent: number; failed: number; alreadySent: number }> {
     const tag = opts?.tag?.trim() || null;
+    const cohort = opts?.cohort ?? null;
     const [newsletter] = await db
         .select()
         .from(newsletters)
@@ -138,7 +140,26 @@ export async function sendNewsletterToSubscribers(
         publicationJoinRequired = !!pub && !pub.isPrimary;
     }
 
-    const allSubscribers = publicationJoinRequired
+    // Engagement-cohort audience (Tier 7 #2 win-back): resolve the cohort to a
+    // set of confirmed subscriber ids and restrict the send to that set. The
+    // base audienceWhere already limits to confirmed + (optional) tag; the
+    // cohort further narrows it, so a cohort send never reaches an unconfirmed
+    // or out-of-segment subscriber. Cohort and tag can combine (e.g. dormant
+    // subscribers carrying a tag), matching the audience preview.
+    let cohortIds: Set<string> | null = null;
+    if (cohort) {
+        const members = await resolveCohortSubscribers(cohort);
+        cohortIds = new Set(members.map((m) => m.id));
+        if (cohortIds.size === 0) {
+            throw new Error(
+                cohort === "dormant"
+                    ? "No dormant subscribers to win back right now"
+                    : "No at-risk subscribers to re-engage right now",
+            );
+        }
+    }
+
+    const resolvedSubscribers = publicationJoinRequired
         ? await db
               .select({ id: subscribers.id, email: subscribers.email })
               .from(subscribers)
@@ -157,7 +178,20 @@ export async function sendNewsletterToSubscribers(
               .from(subscribers)
               .where(audienceWhere);
 
+    // Apply the cohort filter in JS (the cohort is itself an aggregate query;
+    // intersecting id-sets keeps the two definitions decoupled and testable).
+    const allSubscribers = cohortIds
+        ? resolvedSubscribers.filter((s) => cohortIds!.has(s.id))
+        : resolvedSubscribers;
+
     if (allSubscribers.length === 0) {
+        if (cohort) {
+            throw new Error(
+                cohort === "dormant"
+                    ? "No dormant subscribers match this send"
+                    : "No at-risk subscribers match this send",
+            );
+        }
         if (tag) {
             // Segmented send with an empty segment: don't silently mark the
             // whole issue "sent" — the writer likely picked the wrong tag.

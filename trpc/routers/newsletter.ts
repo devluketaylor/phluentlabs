@@ -22,6 +22,7 @@ import { signSubscriberToken } from "@/lib/subscriber-token";
 import { signPreviewToken } from "@/lib/preview-token";
 import { TRPCError } from "@trpc/server";
 import { sendNewsletterToSubscribers } from "@/lib/send-newsletter";
+import { resolveCohortSubscribers } from "@/lib/engagement-cohort";
 import { recordAudit } from "@/lib/audit";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -220,16 +221,22 @@ export const adminNewsletterRouter = router({
                 // Optional segment: when provided, only confirmed subscribers
                 // carrying this tag are targeted. Omit/null = all confirmed.
                 tag: z.string().trim().min(1).nullish(),
+                // Optional engagement cohort (Tier 7 #2 win-back): target only
+                // the at-risk or dormant segment. Combines with tag if both set.
+                cohort: z.enum(["atRisk", "dormant"]).nullish(),
             })
         )
         .mutation(async ({ input, ctx }) => {
             try {
-                const { sent } = await sendNewsletterToSubscribers(input.id, { tag: input.tag });
+                const { sent } = await sendNewsletterToSubscribers(input.id, {
+                    tag: input.tag,
+                    cohort: input.cohort,
+                });
                 await recordAudit(ctx, {
                     action: "newsletter.send",
                     targetType: "newsletter",
                     targetId: input.id,
-                    metadata: { sent, tag: input.tag ?? null },
+                    metadata: { sent, tag: input.tag ?? null, cohort: input.cohort ?? null },
                 });
                 return { ok: true, sent };
             } catch (e) {
@@ -436,13 +443,47 @@ export const adminNewsletterRouter = router({
         .input(
             z.object({
                 tag: z.string().trim().min(1).nullish(),
+                cohort: z.enum(["atRisk", "dormant"]).nullish(),
             })
         )
         .query(async ({ input, ctx }) => {
             const tag = input.tag?.trim() || null;
+            const cohort = input.cohort ?? null;
             const where = tag
                 ? and(eq(subscribers.status, "subscribed"), arrayContains(subscribers.tags, [tag]))
                 : eq(subscribers.status, "subscribed");
+
+            // When a cohort is selected, resolve it to a subscriber-id set and
+            // intersect with the (confirmed + optional-tag) base audience — the
+            // exact same resolution the send path uses, so the preview count
+            // matches what will actually be sent.
+            if (cohort) {
+                const [members, baseRows] = await Promise.all([
+                    resolveCohortSubscribers(cohort),
+                    ctx.db
+                        .select({
+                            id: subscribers.id,
+                            email: subscribers.email,
+                            firstName: subscribers.firstName,
+                            lastName: subscribers.lastName,
+                        })
+                        .from(subscribers)
+                        .where(where)
+                        .orderBy(subscribers.email),
+                ]);
+                const cohortIds = new Set(members.map((m) => m.id));
+                const matched = baseRows.filter((r) => cohortIds.has(r.id));
+                return {
+                    tag,
+                    cohort,
+                    count: matched.length,
+                    sample: matched.slice(0, 5).map(({ email, firstName, lastName }) => ({
+                        email,
+                        firstName,
+                        lastName,
+                    })),
+                };
+            }
 
             const [[{ total }], sample] = await Promise.all([
                 ctx.db.select({ total: count() }).from(subscribers).where(where),
@@ -458,7 +499,7 @@ export const adminNewsletterRouter = router({
                     .limit(5),
             ]);
 
-            return { tag, count: total, sample };
+            return { tag, cohort, count: total, sample };
         }),
 
     // Schedule (or reschedule) a newsletter to send at a future time. A cron
