@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { adminProcedure, router } from "@/trpc/server";
-import { and, count, desc, eq, gte, isNotNull, lt, inArray, asc, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNotNull, isNull, lte, lt, inArray, asc, or } from "drizzle-orm";
 import { subscribers } from "@/db/schemas/subscribers";
+import { REMINDER_AFTER_DAYS, REMINDER_MAX_AGE_DAYS } from "@/lib/pending-reminders";
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { pageViews } from "@/db/schemas/page-views";
@@ -658,6 +659,90 @@ export const adminDashboardRouter = router({
                 firstWeekday: start.getDay(),
                 items,
                 upcoming,
+            };
+        }),
+
+    // ── Double opt-in health (pending-cleanup surface) ────────────────────
+    // Read-only view of the pending-subscriber funnel for list hygiene: how
+    // many pending subscribers exist, how many are eligible for the one-time
+    // reminder, how many have already been reminded, and a STALE cohort
+    // (reminded already + past the reminder max-age window = cold leads).
+    // Also returns a sample list of stale rows so an admin can eyeball them.
+    // This NEVER deletes anyone — deletion stays a manual admin action via the
+    // existing bulk-delete tooling.
+    pendingHealth: adminProcedure
+        .input(
+            z
+                .object({
+                    // Rows older than this (and already reminded) count as stale.
+                    staleAfterDays: z.number().int().min(1).max(365).optional(),
+                    sampleLimit: z.number().int().min(1).max(100).default(25),
+                })
+                .default({ sampleLimit: 25 }),
+        )
+        .query(async ({ ctx, input }) => {
+            const now = Date.now();
+            const staleAfterDays = input.staleAfterDays ?? REMINDER_MAX_AGE_DAYS;
+            const daysAgo = (d: number) => new Date(now - d * 24 * 60 * 60 * 1000);
+
+            const pendingWhere = eq(subscribers.status, "pending");
+            // Eligible for a reminder right now: pending, never reminded, old
+            // enough to remind, not too cold to remind.
+            const eligibleWhere = and(
+                pendingWhere,
+                isNull(subscribers.confirmReminderSentAt),
+                lte(subscribers.createdAt, daysAgo(REMINDER_AFTER_DAYS)),
+                gte(subscribers.createdAt, daysAgo(REMINDER_MAX_AGE_DAYS)),
+            );
+            // Stale: pending + already reminded + older than the stale window.
+            const staleWhere = and(
+                pendingWhere,
+                isNotNull(subscribers.confirmReminderSentAt),
+                lte(subscribers.createdAt, daysAgo(staleAfterDays)),
+            );
+
+            const [pendingRow, remindedRow, eligibleRow, staleRow, sample] =
+                await Promise.all([
+                    ctx.db.select({ c: count() }).from(subscribers).where(pendingWhere),
+                    ctx.db
+                        .select({ c: count() })
+                        .from(subscribers)
+                        .where(and(pendingWhere, isNotNull(subscribers.confirmReminderSentAt))),
+                    ctx.db.select({ c: count() }).from(subscribers).where(eligibleWhere),
+                    ctx.db.select({ c: count() }).from(subscribers).where(staleWhere),
+                    ctx.db
+                        .select({
+                            id: subscribers.id,
+                            email: subscribers.email,
+                            firstName: subscribers.firstName,
+                            lastName: subscribers.lastName,
+                            createdAt: subscribers.createdAt,
+                            confirmReminderSentAt: subscribers.confirmReminderSentAt,
+                        })
+                        .from(subscribers)
+                        .where(staleWhere)
+                        .orderBy(asc(subscribers.createdAt))
+                        .limit(input.sampleLimit),
+                ]);
+
+            return {
+                pending: pendingRow[0]?.c ?? 0,
+                reminded: remindedRow[0]?.c ?? 0,
+                eligibleForReminder: eligibleRow[0]?.c ?? 0,
+                stale: staleRow[0]?.c ?? 0,
+                staleAfterDays,
+                reminderAfterDays: REMINDER_AFTER_DAYS,
+                reminderMaxAgeDays: REMINDER_MAX_AGE_DAYS,
+                staleSample: sample.map((r) => ({
+                    id: r.id,
+                    email: r.email,
+                    firstName: r.firstName,
+                    lastName: r.lastName,
+                    createdAtMs: r.createdAt.getTime(),
+                    reminderSentAtMs: r.confirmReminderSentAt
+                        ? r.confirmReminderSentAt.getTime()
+                        : null,
+                })),
             };
         }),
 });

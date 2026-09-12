@@ -16,6 +16,11 @@ export const subscribers = pgTable("subscribers", {
     // backfill runs in the migration).
     referralCode: text("referral_code").unique(),
     referredBy: text("referred_by"),
+    // Double opt-in reminder automation: stamped when we send the single
+    // gentle "you never confirmed" reminder to a pending subscriber, so the
+    // reminder cron only ever emails a given pending row ONCE. Nullable so
+    // existing rows stay valid (NULL = no reminder sent yet).
+    confirmReminderSentAt: timestamp("confirm_reminder_sent_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     confirmedAt: timestamp("confirmed_at"),
     unsubscribedAt: timestamp("unsubscribed_at"),

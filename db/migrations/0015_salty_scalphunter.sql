@@ -1,0 +1,1 @@
+ALTER TABLE "subscribers" ADD COLUMN "confirm_reminder_sent_at" timestamp;

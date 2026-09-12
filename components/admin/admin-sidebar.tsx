@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard, ScrollText, KeyRound, ShieldCheck, UserCog, MessagesSquare, LineChart, CalendarDays, Layers, Activity } from "lucide-react";
+import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard, ScrollText, KeyRound, ShieldCheck, UserCog, MessagesSquare, LineChart, CalendarDays, Layers, Activity, HeartPulse } from "lucide-react";
 import {
     Sidebar,
     SidebarContent,
@@ -26,6 +26,7 @@ const navItems = [
     { title: "Calendar", href: "/admin/calendar", icon: CalendarDays },
     { title: "Subscribers", href: "/admin/subscribers", icon: Users },
     { title: "Engagement", href: "/admin/engagement", icon: Activity },
+    { title: "List Health", href: "/admin/list-health", icon: HeartPulse },
     { title: "Feedback", href: "/admin/feedback", icon: MessagesSquare },
     { title: "Audit Log", href: "/admin/audit", icon: ScrollText },
     { title: "API Keys", href: "/admin/api-keys", icon: KeyRound },
