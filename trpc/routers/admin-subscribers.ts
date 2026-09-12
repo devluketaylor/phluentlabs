@@ -118,6 +118,39 @@ export const adminSubscribersRouter = router({
                 .where(eq(newsletterRecipients.subscriberId, input.id))
                 .orderBy(desc(newsletterRecipients.createdAt));
 
+            // Engagement summary for this subscriber, aggregated across all
+            // newsletter_recipients rows: how many issues they were actually
+            // SENT (delivery status 'sent'), how many they opened / clicked, and
+            // when they last engaged (max of opened/clicked timestamps). Read-only.
+            const [eng] = await ctx.db
+                .select({
+                    sent: sql<number>`COUNT(*) FILTER (WHERE ${newsletterRecipients.status} = 'sent')::int`,
+                    opened: sql<number>`COUNT(*) FILTER (WHERE ${newsletterRecipients.openedAt} IS NOT NULL)::int`,
+                    clicked: sql<number>`COUNT(*) FILTER (WHERE ${newsletterRecipients.clickedAt} IS NOT NULL)::int`,
+                    lastOpenedAt: sql<Date | null>`MAX(${newsletterRecipients.openedAt})`,
+                    lastClickedAt: sql<Date | null>`MAX(${newsletterRecipients.clickedAt})`,
+                })
+                .from(newsletterRecipients)
+                .where(eq(newsletterRecipients.subscriberId, input.id));
+
+            const engSent = Number(eng?.sent ?? 0);
+            const engOpened = Number(eng?.opened ?? 0);
+            const engClicked = Number(eng?.clicked ?? 0);
+            const lastOpened = eng?.lastOpenedAt ? new Date(eng.lastOpenedAt) : null;
+            const lastClicked = eng?.lastClickedAt ? new Date(eng.lastClickedAt) : null;
+            const lastEngagedAt =
+                lastOpened && lastClicked
+                    ? new Date(Math.max(lastOpened.getTime(), lastClicked.getTime()))
+                    : lastOpened ?? lastClicked ?? null;
+            const engagement = {
+                sent: engSent,
+                opened: engOpened,
+                clicked: engClicked,
+                openRate: engSent > 0 ? engOpened / engSent : 0,
+                clickRate: engSent > 0 ? engClicked / engSent : 0,
+                lastEngagedAt,
+            };
+
             // Referral program: how many subscribers this person has referred,
             // and (if they were referred) the email of who referred them.
             const [{ referralCount }] = await ctx.db
@@ -138,8 +171,166 @@ export const adminSubscribersRouter = router({
                 subscriber,
                 issues,
                 issuesCount: issues.length,
+                engagement,
                 referralCount: Number(referralCount ?? 0),
                 referredByEmail,
+            };
+        }),
+    // List/leaderboard of subscriber engagement, aggregated from
+    // newsletter_recipients. Read-only. Supports three cohorts:
+    //   - "engaged": most-engaged first (by opens, then clicks)
+    //   - "dormant": confirmed subscribers who were sent >= minSent issues but
+    //     have NEVER opened one (prime unsubscribe/win-back candidates)
+    //   - "at-risk": confirmed subscribers who used to open but haven't opened
+    //     anything in the last `inactiveDays` days (declining engagement)
+    // Also returns headline cohort counts for the page summary.
+    engagementList: adminProcedure
+        .input(
+            z.object({
+                cohort: z.enum(["engaged", "dormant", "atRisk"]).default("engaged"),
+                minSent: z.number().int().min(1).max(100).default(2),
+                inactiveDays: z.number().int().min(7).max(365).default(60),
+                limit: z.number().int().min(1).max(200).default(50),
+                offset: z.number().int().min(0).default(0),
+            })
+        )
+        .query(async ({ input, ctx }) => {
+            // Per-subscriber engagement rollup for CONFIRMED subscribers only
+            // (pending/unsubscribed aren't part of the active audience). We join
+            // recipients onto subscribers so subscribers with zero sends still
+            // appear (LEFT JOIN), then aggregate.
+            const base = ctx.db
+                .select({
+                    id: subscribers.id,
+                    email: subscribers.email,
+                    firstName: subscribers.firstName,
+                    lastName: subscribers.lastName,
+                    createdAt: subscribers.createdAt,
+                    sent: sql<number>`COUNT(*) FILTER (WHERE ${newsletterRecipients.status} = 'sent')::int`,
+                    opened: sql<number>`COUNT(*) FILTER (WHERE ${newsletterRecipients.openedAt} IS NOT NULL)::int`,
+                    clicked: sql<number>`COUNT(*) FILTER (WHERE ${newsletterRecipients.clickedAt} IS NOT NULL)::int`,
+                    lastEngagedAt: sql<Date | null>`GREATEST(MAX(${newsletterRecipients.openedAt}), MAX(${newsletterRecipients.clickedAt}))`,
+                })
+                .from(subscribers)
+                .leftJoin(
+                    newsletterRecipients,
+                    eq(newsletterRecipients.subscriberId, subscribers.id)
+                )
+                .where(eq(subscribers.status, "subscribed"))
+                .groupBy(
+                    subscribers.id,
+                    subscribers.email,
+                    subscribers.firstName,
+                    subscribers.lastName,
+                    subscribers.createdAt
+                )
+                .as("eng");
+
+            const sentCol = sql<number>`${base.sent}`;
+            const openedCol = sql<number>`${base.opened}`;
+            const clickedCol = sql<number>`${base.clicked}`;
+            const lastCol = sql<Date | null>`${base.lastEngagedAt}`;
+
+            const cutoff = new Date(Date.now() - input.inactiveDays * 24 * 60 * 60 * 1000);
+
+            let where;
+            let orderBy;
+            if (input.cohort === "dormant") {
+                // Sent >= minSent, never opened anything.
+                where = and(sql`${sentCol} >= ${input.minSent}`, sql`${openedCol} = 0`);
+                orderBy = [desc(sentCol)];
+            } else if (input.cohort === "atRisk") {
+                // Opened at least once, but last engagement is older than cutoff.
+                where = and(
+                    sql`${sentCol} >= ${input.minSent}`,
+                    sql`${openedCol} > 0`,
+                    sql`${lastCol} IS NOT NULL`,
+                    sql`${lastCol} < ${cutoff}`
+                );
+                orderBy = [asc(lastCol)];
+            } else {
+                // Engaged leaderboard: most opens first, then clicks.
+                where = sql`${openedCol} > 0`;
+                orderBy = [desc(openedCol), desc(clickedCol)];
+            }
+
+            const rows = await ctx.db
+                .select({
+                    id: base.id,
+                    email: base.email,
+                    firstName: base.firstName,
+                    lastName: base.lastName,
+                    sent: base.sent,
+                    opened: base.opened,
+                    clicked: base.clicked,
+                    lastEngagedAt: base.lastEngagedAt,
+                })
+                .from(base)
+                .where(where)
+                .orderBy(...orderBy)
+                .limit(input.limit)
+                .offset(input.offset);
+
+            const [{ total }] = await ctx.db
+                .select({ total: count() })
+                .from(base)
+                .where(where);
+
+            return {
+                rows: rows.map((r) => ({
+                    ...r,
+                    openRate: r.sent > 0 ? r.opened / r.sent : 0,
+                    clickRate: r.sent > 0 ? r.clicked / r.sent : 0,
+                })),
+                total: Number(total ?? 0),
+            };
+        }),
+
+    // Headline cohort counts for the engagement page summary cards. Cheap
+    // single-pass aggregation over confirmed subscribers. Read-only.
+    engagementSummary: adminProcedure
+        .input(
+            z.object({
+                minSent: z.number().int().min(1).max(100).default(2),
+                inactiveDays: z.number().int().min(7).max(365).default(60),
+            })
+        )
+        .query(async ({ input, ctx }) => {
+            const cutoff = new Date(Date.now() - input.inactiveDays * 24 * 60 * 60 * 1000);
+            const res = await ctx.db.execute<{
+                confirmed: number;
+                engaged: number;
+                dormant: number;
+                at_risk: number;
+            }>(sql`
+                WITH eng AS (
+                    SELECT s.id,
+                        COUNT(*) FILTER (WHERE r.status = 'sent') AS sent,
+                        COUNT(*) FILTER (WHERE r.opened_at IS NOT NULL) AS opened,
+                        GREATEST(MAX(r.opened_at), MAX(r.clicked_at)) AS last_engaged
+                    FROM ${subscribers} s
+                    LEFT JOIN ${newsletterRecipients} r ON r.subscriber_id = s.id
+                    WHERE s.status = 'subscribed'
+                    GROUP BY s.id
+                )
+                SELECT
+                    COUNT(*)::int AS confirmed,
+                    COUNT(*) FILTER (WHERE opened > 0)::int AS engaged,
+                    COUNT(*) FILTER (WHERE sent >= ${input.minSent} AND opened = 0)::int AS dormant,
+                    COUNT(*) FILTER (WHERE sent >= ${input.minSent} AND opened > 0 AND last_engaged IS NOT NULL AND last_engaged < ${cutoff})::int AS at_risk
+                FROM eng
+            `);
+            const row = (Array.isArray(res) ? res[0] : (res as any).rows?.[0]) ?? {
+                confirmed: 0,
+                engaged: 0,
+                dormant: 0,
+                at_risk: 0,
+            };
+            return {
+                confirmed: Number(row.confirmed ?? 0),
+                engaged: Number(row.engaged ?? 0),
+                dormant: Number(row.dormant ?? 0),
+                atRisk: Number(row.at_risk ?? 0),
             };
         }),
     exportCsv: adminProcedure

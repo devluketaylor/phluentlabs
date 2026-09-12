@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/trpc/client";
-import { User, ArrowLeft, Mail, CheckCircle2, XCircle, Clock, Gift, Users } from "lucide-react";
+import { User, ArrowLeft, Mail, CheckCircle2, XCircle, Clock, Gift, Users, Activity, MousePointerClick, MailOpen } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
@@ -156,6 +156,66 @@ export default function SubscriberDetailPage() {
                                 </p>
                             )}
                         </>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Engagement */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <Activity className="size-4 text-primary" />
+                        Engagement
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {isLoading || !data ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-4 w-40" />
+                            <Skeleton className="h-4 w-56" />
+                        </div>
+                    ) : data.engagement.sent === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            No issues delivered yet — nothing to measure.
+                        </p>
+                    ) : (
+                        <div className="grid gap-3 sm:grid-cols-3">
+                            <div className="rounded-md border p-3">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <MailOpen className="size-3.5" />
+                                    Open rate
+                                </div>
+                                <p className="mt-1 text-sm font-medium">
+                                    {Math.round(data.engagement.openRate * 100)}%{" "}
+                                    <span className="text-xs text-muted-foreground">
+                                        ({data.engagement.opened}/{data.engagement.sent})
+                                    </span>
+                                </p>
+                            </div>
+                            <div className="rounded-md border p-3">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <MousePointerClick className="size-3.5" />
+                                    Click rate
+                                </div>
+                                <p className="mt-1 text-sm font-medium">
+                                    {Math.round(data.engagement.clickRate * 100)}%{" "}
+                                    <span className="text-xs text-muted-foreground">
+                                        ({data.engagement.clicked}/{data.engagement.sent})
+                                    </span>
+                                </p>
+                            </div>
+                            <div className="rounded-md border p-3">
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <Clock className="size-3.5" />
+                                    Last engaged
+                                </div>
+                                <p className="mt-1 text-sm font-medium">
+                                    {data.engagement.lastEngagedAt
+                                        ? formatDateTime(data.engagement.lastEngagedAt)
+                                        : "Never opened"}
+                                </p>
+                            </div>
+                        </div>
                     )}
                 </CardContent>
             </Card>
