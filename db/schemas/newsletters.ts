@@ -10,6 +10,11 @@ export const newsletters = pgTable("newsletters", {
     // variant sent is recorded per recipient. Null = no A/B test (single subject).
     subjectB: text("subject_b"),
     preheader: text("preheader"),
+    // Optional publication/section this issue belongs to (additive). NULL means
+    // the primary/default stream (existing single-stream behaviour) — every
+    // confirmed subscriber is eligible. A non-null publicationId gates the send
+    // audience to subscribers who opted in to that publication.
+    publicationId: text("publication_id"),
     html: text("html").notNull(),
     // SEO fields (optional): let the search title/description differ from the
     // email subject/preheader. Fall back to subject/preheader when null.

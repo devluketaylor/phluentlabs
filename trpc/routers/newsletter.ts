@@ -59,6 +59,9 @@ export const adminNewsletterRouter = router({
                 html: z.string().min(1),
                 preheader: z.string().optional(),
                 slug: z.string().optional(),
+                // Optional publication/section this issue belongs to. Null =
+                // primary/default stream (unchanged single-stream behaviour).
+                publicationId: z.string().nullish(),
             })
         )
         .mutation(async ({ input, ctx }) => {
@@ -76,6 +79,7 @@ export const adminNewsletterRouter = router({
                 subjectB: input.subjectB?.trim() || null,
                 html: input.html,
                 preheader: input.preheader ?? null,
+                publicationId: input.publicationId || null,
                 status: "draft",
                 createdBy: ctx.adminUserId,
             });
@@ -99,6 +103,9 @@ export const adminNewsletterRouter = router({
                 preheader: z.string().optional(),
                 status: newsletterStatus,
                 slug: z.string().optional(),
+                // Optional publication/section reassignment. undefined = leave
+                // as-is; null = move back to the primary/default stream.
+                publicationId: z.string().nullish(),
             })
         )
         .mutation(async ({ input, ctx }) => {
@@ -150,6 +157,9 @@ export const adminNewsletterRouter = router({
                     preheader: input.preheader ?? null,
                     status: input.status,
                     ...(scheduledAt !== undefined ? { scheduledAt } : {}),
+                    ...(input.publicationId !== undefined
+                        ? { publicationId: input.publicationId || null }
+                        : {}),
                     slug: input.slug?.trim() ? toSlug(input.slug.trim()) : undefined,
                     updatedAt: new Date(),
                 })

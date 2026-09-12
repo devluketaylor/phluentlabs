@@ -2,6 +2,7 @@ import { db } from "@/db/client";
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
+import { publications, subscriberPublications } from "@/db/schemas/publications";
 import { and, arrayContains, eq, inArray, ne } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
@@ -119,16 +120,53 @@ export async function sendNewsletterToSubscribers(
         ? and(eq(subscribers.status, "subscribed"), arrayContains(subscribers.tags, [tag]))
         : eq(subscribers.status, "subscribed");
 
-    const allSubscribers = await db
-        .select({ id: subscribers.id, email: subscribers.email })
-        .from(subscribers)
-        .where(audienceWhere);
+    // Publication gating (additive): a NULL publicationId is the primary/default
+    // stream — every confirmed subscriber is eligible (unchanged behaviour). If
+    // an issue is assigned to a NON-primary publication, restrict the audience
+    // to subscribers who opted in to that publication (a join row). If it's
+    // assigned to the PRIMARY publication, treat it exactly like the default
+    // stream (all confirmed subscribers) so the primary stream never requires
+    // an opt-in backfill.
+    let publicationJoinRequired = false;
+    if (newsletter.publicationId) {
+        const [pub] = await db
+            .select({ id: publications.id, isPrimary: publications.isPrimary })
+            .from(publications)
+            .where(eq(publications.id, newsletter.publicationId));
+        // Unknown publication id (deleted, etc.) falls back to the default
+        // stream rather than blocking the send.
+        publicationJoinRequired = !!pub && !pub.isPrimary;
+    }
+
+    const allSubscribers = publicationJoinRequired
+        ? await db
+              .select({ id: subscribers.id, email: subscribers.email })
+              .from(subscribers)
+              .innerJoin(
+                  subscriberPublications,
+                  eq(subscriberPublications.subscriberId, subscribers.id),
+              )
+              .where(
+                  and(
+                      audienceWhere,
+                      eq(subscriberPublications.publicationId, newsletter.publicationId!),
+                  ),
+              )
+        : await db
+              .select({ id: subscribers.id, email: subscribers.email })
+              .from(subscribers)
+              .where(audienceWhere);
 
     if (allSubscribers.length === 0) {
         if (tag) {
             // Segmented send with an empty segment: don't silently mark the
             // whole issue "sent" — the writer likely picked the wrong tag.
             throw new Error(`No confirmed subscribers have the tag "${tag}"`);
+        }
+        if (publicationJoinRequired) {
+            // A non-primary publication with zero opted-in subscribers: don't
+            // silently finalize as "sent" — nobody has opted in yet.
+            throw new Error("No subscribers have opted in to this publication yet");
         }
         // Full send with zero confirmed subscribers: still mark as sent so it
         // doesn't get re-attempted forever.
