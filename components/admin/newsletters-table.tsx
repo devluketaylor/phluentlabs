@@ -290,6 +290,13 @@ function ScheduleDialog({
 
     const isScheduled = newsletter.status === "scheduled";
 
+    // Best-send-window hint: pull the audience's peak open window so the admin
+    // can pick a high-engagement send time. Only fetch while the dialog is open.
+    const { data: sendTime } = trpc.adminDashboard.sendTimeInsights.useQuery(
+        undefined,
+        { enabled: open, refetchOnWindowFocus: false }
+    );
+
     const submit = async (clear: boolean) => {
         setBusy(true);
         setError(null);
@@ -325,6 +332,16 @@ function ScheduleDialog({
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                 />
+                {sendTime && sendTime.hasSignal && (
+                    <p className="text-xs text-muted-foreground">
+                        💡 Readers open most on{" "}
+                        <span className="font-medium text-[#ff5c5c]">
+                            {sendTime.recommendation.day}s around{" "}
+                            {sendTime.recommendation.windowLabel}
+                        </span>{" "}
+                        — consider sending then.
+                    </p>
+                )}
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 <DialogFooter className="gap-2">
                     {isScheduled && (

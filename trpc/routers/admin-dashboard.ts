@@ -425,6 +425,123 @@ export const adminDashboardRouter = router({
         };
     }),
 
+    // Send-time optimization insights: aggregate the day-of-week + hour-of-day
+    // that recipients OPEN (and click) from the per-recipient openedAt/clickedAt
+    // timestamps the Resend webhook already records. Read-only, no schema. We
+    // bucket in JS (local server timezone, which is the tz the admin schedules
+    // in via the datetime-local picker) and return a full 7x24 matrix plus
+    // rolled-up per-day and per-hour distributions and a recommended send
+    // window (the hour whose opens cluster the hardest). This lets the editorial
+    // calendar / schedule form recommend WHEN to send.
+    sendTimeInsights: adminProcedure.query(async ({ ctx }) => {
+        // Pull every recipient open timestamp (first-open) + click timestamp.
+        // openedAt/clickedAt are the FIRST occurrence, which is the right signal
+        // for "when do people engage after a send".
+        const [openRows, clickRows] = await Promise.all([
+            ctx.db
+                .select({ ts: newsletterRecipients.openedAt })
+                .from(newsletterRecipients)
+                .where(isNotNull(newsletterRecipients.openedAt)),
+            ctx.db
+                .select({ ts: newsletterRecipients.clickedAt })
+                .from(newsletterRecipients)
+                .where(isNotNull(newsletterRecipients.clickedAt)),
+        ]);
+
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+        // 7x24 matrix of open counts (matrix[day][hour]).
+        const matrix: number[][] = Array.from({ length: 7 }, () =>
+            new Array(24).fill(0)
+        );
+        const byDay = new Array(7).fill(0);
+        const byHour = new Array(24).fill(0);
+        const clicksByHour = new Array(24).fill(0);
+
+        for (const r of openRows) {
+            if (!r.ts) continue;
+            const d = new Date(r.ts);
+            const day = d.getDay();
+            const hour = d.getHours();
+            matrix[day][hour] += 1;
+            byDay[day] += 1;
+            byHour[hour] += 1;
+        }
+        for (const r of clickRows) {
+            if (!r.ts) continue;
+            clicksByHour[new Date(r.ts).getHours()] += 1;
+        }
+
+        const totalOpens = openRows.length;
+        const totalClicks = clickRows.length;
+
+        // Recommendation: pick the 3-hour window with the most opens (a send
+        // landing near a high-open window gives the best shot at the top of the
+        // inbox). Sliding 3-hour sum over the hour histogram; break ties toward
+        // the earlier window. Also surface the single best day + hour.
+        let bestWindowStart = 0;
+        let bestWindowSum = -1;
+        for (let h = 0; h < 24; h++) {
+            const sum = byHour[h] + byHour[(h + 1) % 24] + byHour[(h + 2) % 24];
+            if (sum > bestWindowSum) {
+                bestWindowSum = sum;
+                bestWindowStart = h;
+            }
+        }
+        let bestHour = 0;
+        let bestHourCount = -1;
+        for (let h = 0; h < 24; h++) {
+            if (byHour[h] > bestHourCount) {
+                bestHourCount = byHour[h];
+                bestHour = h;
+            }
+        }
+        let bestDay = 0;
+        let bestDayCount = -1;
+        for (let d = 0; d < 7; d++) {
+            if (byDay[d] > bestDayCount) {
+                bestDayCount = byDay[d];
+                bestDay = d;
+            }
+        }
+
+        const fmtHour = (h: number) => {
+            const ampm = h < 12 ? "am" : "pm";
+            const hr = h % 12 === 0 ? 12 : h % 12;
+            return `${hr}${ampm}`;
+        };
+
+        // Only make a confident recommendation once there's a reasonable signal.
+        const MIN_OPENS_FOR_RECOMMENDATION = 20;
+        const hasSignal = totalOpens >= MIN_OPENS_FOR_RECOMMENDATION;
+
+        return {
+            dayNames,
+            matrix,
+            byDay: dayNames.map((label, i) => ({ label, count: byDay[i] })),
+            byHour: Array.from({ length: 24 }, (_, h) => ({
+                label: fmtHour(h),
+                hour: h,
+                opens: byHour[h],
+                clicks: clicksByHour[h],
+            })),
+            totalOpens,
+            totalClicks,
+            hasSignal,
+            recommendation: {
+                day: dayNames[bestDay],
+                dayIndex: bestDay,
+                hour: bestHour,
+                hourLabel: fmtHour(bestHour),
+                windowStart: bestWindowStart,
+                windowEnd: (bestWindowStart + 3) % 24,
+                windowLabel: `${fmtHour(bestWindowStart)}\u2013${fmtHour(
+                    (bestWindowStart + 3) % 24
+                )}`,
+            },
+        };
+    }),
+
     // Editorial calendar / queue: scheduled + sent issues (plus drafts that
     // carry a scheduledAt) placed on a month grid. Read-only; no schema.
     // `month` is a 1-indexed month and `year` a full year; when omitted we

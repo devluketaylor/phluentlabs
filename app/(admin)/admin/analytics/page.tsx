@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/trpc/client";
-import { LineChart as LineChartIcon, TrendingUp, Trophy, FlaskConical } from "lucide-react";
+import { LineChart as LineChartIcon, TrendingUp, Trophy, FlaskConical, Clock } from "lucide-react";
 import Link from "next/link";
 import { LineChart, BarChart, DualLineChart } from "@/components/admin/charts";
 
@@ -28,6 +28,19 @@ export default function AnalyticsPage() {
     // Show the most recent ~12 issues on the engagement timeline so labels stay
     // readable; the underlying query returns full history.
     const perf = data ? data.performance.slice(-12) : [];
+
+    const {
+        data: sendTime,
+        isLoading: sendTimeLoading,
+    } = trpc.adminDashboard.sendTimeInsights.useQuery(undefined, {
+        refetchOnWindowFocus: false,
+    });
+
+    // Max open-count in the 7x24 matrix, for heatmap cell shading.
+    const heatMax =
+        sendTime && sendTime.matrix.length
+            ? Math.max(1, ...sendTime.matrix.flat())
+            : 1;
 
     return (
         <div className="max-w-5xl mx-auto pt-8 pb-16 px-4 space-y-6">
@@ -147,6 +160,132 @@ export default function AnalyticsPage() {
                             }}
                             ariaLabel="Open and click rate per issue over time"
                         />
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Send-time optimization insights */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <Clock className="size-4 text-primary" />
+                        Best time to send
+                        <span className="text-xs font-normal text-muted-foreground">
+                            (when readers open, your timezone)
+                        </span>
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                    {sendTimeLoading || !sendTime ? (
+                        <Skeleton className="h-40 w-full" />
+                    ) : sendTime.totalOpens === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            No opens recorded yet. Once issues go out and Resend
+                            reports opens, your audience&rsquo;s peak engagement
+                            windows will appear here to guide when to send.
+                        </p>
+                    ) : (
+                        <>
+                            <div className="rounded-lg border border-[#ff5c5c]/30 bg-[#ff5c5c]/10 p-4">
+                                {sendTime.hasSignal ? (
+                                    <p className="text-sm">
+                                        <span className="font-semibold text-[#ff5c5c]">
+                                            Recommended send window:
+                                        </span>{" "}
+                                        <span className="font-medium text-foreground">
+                                            {sendTime.recommendation.day}s around{" "}
+                                            {sendTime.recommendation.windowLabel}
+                                        </span>{" "}
+                                        <span className="text-muted-foreground">
+                                            — opens cluster hardest then (
+                                            {sendTime.totalOpens.toLocaleString()} opens
+                                            analyzed).
+                                        </span>
+                                    </p>
+                                ) : (
+                                    <p className="text-sm text-muted-foreground">
+                                        Only {sendTime.totalOpens.toLocaleString()} opens so
+                                        far — the chart below hints at your
+                                        audience&rsquo;s rhythm, but we&rsquo;ll make a
+                                        confident recommendation once more engagement
+                                        accumulates.
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Opens-by-hour distribution */}
+                            <div>
+                                <p className="mb-2 text-xs font-medium text-muted-foreground">
+                                    Opens by hour of day
+                                </p>
+                                <BarChart
+                                    data={sendTime.byHour
+                                        .filter((_, i) => i % 2 === 0)
+                                        .map((b) => ({
+                                            label: b.label,
+                                            value: b.opens,
+                                        }))}
+                                    ariaLabel="Opens by hour of day"
+                                />
+                            </div>
+
+                            {/* Day x hour heatmap */}
+                            <div>
+                                <p className="mb-2 text-xs font-medium text-muted-foreground">
+                                    Open heatmap (day &times; hour)
+                                </p>
+                                <div className="overflow-x-auto">
+                                    <table className="border-separate border-spacing-0.5">
+                                        <thead>
+                                            <tr>
+                                                <th className="w-8" />
+                                                {Array.from({ length: 24 }, (_, h) => (
+                                                    <th
+                                                        key={h}
+                                                        className="w-4 text-[9px] font-normal text-muted-foreground"
+                                                    >
+                                                        {h % 6 === 0 ? h : ""}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {sendTime.matrix.map((row, day) => (
+                                                <tr key={day}>
+                                                    <td className="pr-1 text-[10px] text-muted-foreground">
+                                                        {sendTime.dayNames[day]}
+                                                    </td>
+                                                    {row.map((cnt, hour) => {
+                                                        const intensity =
+                                                            cnt === 0
+                                                                ? 0
+                                                                : 0.15 +
+                                                                  0.85 * (cnt / heatMax);
+                                                        return (
+                                                            <td
+                                                                key={hour}
+                                                                title={`${sendTime.dayNames[day]} ${sendTime.byHour[hour].label}: ${cnt} open${cnt === 1 ? "" : "s"}`}
+                                                                className="h-4 w-4 rounded-sm"
+                                                                style={{
+                                                                    backgroundColor:
+                                                                        cnt === 0
+                                                                            ? "var(--muted)"
+                                                                            : `rgba(255, 92, 92, ${intensity})`,
+                                                                }}
+                                                            />
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p className="mt-2 text-[10px] text-muted-foreground">
+                                    Darker coral = more opens. Hours are in your
+                                    timezone, matching the schedule picker.
+                                </p>
+                            </div>
+                        </>
                     )}
                 </CardContent>
             </Card>
