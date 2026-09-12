@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/trpc/client";
-import { Clock, MailWarning, MailCheck, Snowflake } from "lucide-react";
+import { Clock, MailWarning, MailCheck, Snowflake, ShieldOff, MailX, Ban } from "lucide-react";
 
 function formatDate(ms: number | null | undefined) {
     if (!ms) return "—";
@@ -25,8 +25,39 @@ export function ListHealthView() {
         { sampleLimit: 25 },
         { refetchOnWindowFocus: false },
     );
+    const deliverability = trpc.adminDashboard.deliverabilityHealth.useQuery(
+        { sampleLimit: 50 },
+        { refetchOnWindowFocus: false },
+    );
 
     const d = health.data;
+    const dl = deliverability.data;
+
+    const deliverabilityCards: {
+        label: string;
+        value?: number;
+        icon: typeof Clock;
+        hint: string;
+    }[] = [
+        {
+            label: "Suppressed",
+            value: dl?.suppressed,
+            icon: ShieldOff,
+            hint: "Auto-removed from sends after a hard bounce or spam complaint",
+        },
+        {
+            label: "Hard-bounced",
+            value: dl?.bouncedSubscribers,
+            icon: MailX,
+            hint: "Subscribers whose address bounced on any issue",
+        },
+        {
+            label: "Complained",
+            value: dl?.complainedSubscribers,
+            icon: Ban,
+            hint: "Subscribers who marked an issue as spam",
+        },
+    ];
 
     const cards: { label: string; value?: number; icon: typeof Clock; hint: string }[] = [
         {
@@ -163,6 +194,132 @@ export function ListHealthView() {
                                     stale-pending subscribers.
                                 </p>
                             )}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            <div>
+                <h2 className="mb-3 text-sm font-semibold text-muted-foreground">
+                    Deliverability
+                </h2>
+                <div className="grid gap-3 sm:grid-cols-3">
+                    {deliverabilityCards.map((c) => (
+                        <div key={c.label} className="rounded-lg border p-4">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <c.icon className="size-3.5" />
+                                {c.label}
+                            </div>
+                            <p className="mt-1 text-2xl font-semibold">
+                                {deliverability.isLoading || c.value === undefined ? (
+                                    <Skeleton className="h-7 w-12" />
+                                ) : (
+                                    c.value.toLocaleString()
+                                )}
+                            </p>
+                            {c.hint && (
+                                <p className="mt-1 text-[11px] leading-tight text-muted-foreground">
+                                    {c.hint}
+                                </p>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <ShieldOff className="size-4 text-primary" />
+                        Bounce &amp; complaint activity
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                        Subscribers with delivery problems. Hard bounces and spam complaints
+                        auto-move a subscriber to{" "}
+                        <span className="font-medium">suppressed</span> so we stop mailing dead
+                        or hostile addresses — no manual action needed.
+                    </p>
+                </CardHeader>
+                <CardContent>
+                    {deliverability.isLoading ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-6 w-full" />
+                            <Skeleton className="h-6 w-full" />
+                            <Skeleton className="h-6 w-full" />
+                        </div>
+                    ) : deliverability.isError ? (
+                        <p className="text-sm text-destructive">
+                            {deliverability.error?.message ?? "Failed to load deliverability."}
+                        </p>
+                    ) : !dl || dl.sample.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            No bounces or complaints — great deliverability. 🎉
+                        </p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="border-b text-left text-xs text-muted-foreground">
+                                        <th className="py-2 pr-3 font-medium">Subscriber</th>
+                                        <th className="py-2 px-3 font-medium">Status</th>
+                                        <th className="py-2 px-3 font-medium text-right">Bounced</th>
+                                        <th className="py-2 px-3 font-medium text-right">Complained</th>
+                                        <th className="py-2 pl-3 font-medium text-right">Last problem</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {dl.sample.map((r) => {
+                                        const name = [r.firstName, r.lastName]
+                                            .filter(Boolean)
+                                            .join(" ");
+                                        return (
+                                            <tr key={r.id} className="border-b last:border-0">
+                                                <td className="py-2 pr-3 min-w-0">
+                                                    <Link
+                                                        href={`/admin/subscribers/${r.id}`}
+                                                        className="font-medium hover:text-[#ff5c5c]"
+                                                    >
+                                                        {r.email}
+                                                    </Link>
+                                                    {name && (
+                                                        <div className="text-xs text-muted-foreground truncate">
+                                                            {name}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <span
+                                                        className={
+                                                            r.status === "suppressed"
+                                                                ? "inline-flex items-center rounded-full bg-[#ff5c5c]/10 px-2 py-0.5 text-xs font-medium text-[#ff5c5c]"
+                                                                : "inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                                                        }
+                                                    >
+                                                        {r.status}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2 px-3 text-right tabular-nums">
+                                                    {r.bounced > 0 ? (
+                                                        <span className="text-[#ff5c5c]">{r.bounced}</span>
+                                                    ) : (
+                                                        <span className="text-muted-foreground">0</span>
+                                                    )}
+                                                </td>
+                                                <td className="py-2 px-3 text-right tabular-nums">
+                                                    {r.complained > 0 ? (
+                                                        <span className="text-[#ff5c5c]">{r.complained}</span>
+                                                    ) : (
+                                                        <span className="text-muted-foreground">0</span>
+                                                    )}
+                                                </td>
+                                                <td className="py-2 pl-3 text-right text-muted-foreground tabular-nums">
+                                                    {formatDate(r.lastProblemAtMs)}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
                     )}
                 </CardContent>

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { adminProcedure, router } from "@/trpc/server";
-import { and, count, desc, eq, gte, isNotNull, isNull, lte, lt, inArray, asc, or } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNotNull, isNull, lte, lt, inArray, asc, or, sql } from "drizzle-orm";
 import { subscribers } from "@/db/schemas/subscribers";
 import { REMINDER_AFTER_DAYS, REMINDER_MAX_AGE_DAYS } from "@/lib/pending-reminders";
 import { newsletters } from "@/db/schemas/newsletters";
@@ -741,6 +741,100 @@ export const adminDashboardRouter = router({
                     createdAtMs: r.createdAt.getTime(),
                     reminderSentAtMs: r.confirmReminderSentAt
                         ? r.confirmReminderSentAt.getTime()
+                        : null,
+                })),
+            };
+        }),
+
+    // ── Deliverability health (bounce / complaint / suppression) ───────────
+    // Read-only rollup of delivery problems recorded by the Resend webhook.
+    // Surfaces (1) how many subscribers are currently SUPPRESSED (auto-removed
+    // from sends after a hard bounce or spam complaint), and (2) a per-
+    // subscriber list of anyone who has ever hard-bounced or complained on any
+    // issue — so an admin can see the deliverability signal at the person
+    // level, not just per-issue. Never mutates — suppression itself happens in
+    // the webhook handler; this is the reporting surface.
+    deliverabilityHealth: adminProcedure
+        .input(
+            z
+                .object({
+                    sampleLimit: z.number().int().min(1).max(200).default(50),
+                })
+                .default({ sampleLimit: 50 }),
+        )
+        .query(async ({ ctx, input }) => {
+            // Per-subscriber rollup of bounce/complaint events across all issues.
+            // A subscriber counts as "bounced" if ANY recipient row bounced, and
+            // "complained" if ANY complained.
+            const problemRows = await ctx.db
+                .select({
+                    id: subscribers.id,
+                    email: subscribers.email,
+                    firstName: subscribers.firstName,
+                    lastName: subscribers.lastName,
+                    status: subscribers.status,
+                    bounced: sql<number>`COUNT(*) FILTER (WHERE ${newsletterRecipients.bouncedAt} IS NOT NULL)::int`,
+                    complained: sql<number>`COUNT(*) FILTER (WHERE ${newsletterRecipients.complainedAt} IS NOT NULL)::int`,
+                    lastProblemAt: sql<Date | null>`MAX(GREATEST(${newsletterRecipients.bouncedAt}, ${newsletterRecipients.complainedAt}))`,
+                })
+                .from(subscribers)
+                .innerJoin(
+                    newsletterRecipients,
+                    eq(newsletterRecipients.subscriberId, subscribers.id),
+                )
+                .where(
+                    or(
+                        isNotNull(newsletterRecipients.bouncedAt),
+                        isNotNull(newsletterRecipients.complainedAt),
+                    ),
+                )
+                .groupBy(
+                    subscribers.id,
+                    subscribers.email,
+                    subscribers.firstName,
+                    subscribers.lastName,
+                    subscribers.status,
+                )
+                .orderBy(
+                    desc(sql`MAX(GREATEST(${newsletterRecipients.bouncedAt}, ${newsletterRecipients.complainedAt}))`),
+                )
+                .limit(input.sampleLimit);
+
+            // Headline counts.
+            const [suppressedRow, bouncedSubRow, complainedSubRow] = await Promise.all([
+                ctx.db
+                    .select({ c: count() })
+                    .from(subscribers)
+                    .where(eq(subscribers.status, "suppressed")),
+                // Distinct subscribers with at least one bounced recipient row.
+                ctx.db
+                    .select({
+                        c: sql<number>`COUNT(DISTINCT ${newsletterRecipients.subscriberId})::int`,
+                    })
+                    .from(newsletterRecipients)
+                    .where(isNotNull(newsletterRecipients.bouncedAt)),
+                ctx.db
+                    .select({
+                        c: sql<number>`COUNT(DISTINCT ${newsletterRecipients.subscriberId})::int`,
+                    })
+                    .from(newsletterRecipients)
+                    .where(isNotNull(newsletterRecipients.complainedAt)),
+            ]);
+
+            return {
+                suppressed: suppressedRow[0]?.c ?? 0,
+                bouncedSubscribers: bouncedSubRow[0]?.c ?? 0,
+                complainedSubscribers: complainedSubRow[0]?.c ?? 0,
+                sample: problemRows.map((r) => ({
+                    id: r.id,
+                    email: r.email,
+                    firstName: r.firstName,
+                    lastName: r.lastName,
+                    status: r.status,
+                    bounced: Number(r.bounced ?? 0),
+                    complained: Number(r.complained ?? 0),
+                    lastProblemAtMs: r.lastProblemAt
+                        ? new Date(r.lastProblemAt).getTime()
                         : null,
                 })),
             };
