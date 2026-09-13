@@ -175,6 +175,79 @@ export const adminNewsletterRouter = router({
             return { ok: true };
         }),
 
+    // Lightweight autosave for the rich editor. Persists in-progress edits on a
+    // DRAFT issue without the full-form guards/toasts/audit noise of `update`.
+    // Hard-refuses to touch a non-draft issue (scheduled/sent), so an autosave
+    // timer can never clobber a scheduled/sent issue's content or send state.
+    // Optimistic-concurrency: pass the `updatedAt` the client last knew; if the
+    // row moved on (another tab/editor saved), we reject with CONFLICT rather
+    // than silently overwrite. All content fields are optional so a partial
+    // draft (e.g. body only) still saves. Returns the new `updatedAt` so the
+    // client can show a "Saved HH:MM" indicator and track concurrency.
+    saveDraft: editorProcedure
+        .input(
+            z.object({
+                id: z.string().min(1),
+                subject: z.string().optional(),
+                subjectB: z.string().nullish(),
+                html: z.string().optional(),
+                preheader: z.string().optional(),
+                // The updatedAt the client last observed (ISO or epoch ms). When
+                // provided and stale, the save is rejected to avoid clobbering a
+                // concurrent edit.
+                expectedUpdatedAt: z.union([z.string(), z.number()]).optional(),
+            })
+        )
+        .mutation(async ({ input, ctx }) => {
+            const [existing] = await ctx.db
+                .select()
+                .from(newsletters)
+                .where(eq(newsletters.id, input.id));
+            if (!existing) {
+                throw new TRPCError({ code: "NOT_FOUND", message: "Newsletter not found" });
+            }
+            // Only drafts autosave. A scheduled/sent issue is intentionally
+            // immutable from the autosave path.
+            if (existing.status !== "draft") {
+                throw new TRPCError({
+                    code: "BAD_REQUEST",
+                    message: "Autosave only applies to drafts.",
+                });
+            }
+            // Optimistic concurrency: reject a stale write instead of clobbering.
+            if (input.expectedUpdatedAt !== undefined && existing.updatedAt) {
+                const expected = new Date(input.expectedUpdatedAt).getTime();
+                const actual = new Date(existing.updatedAt).getTime();
+                if (Number.isFinite(expected) && expected < actual) {
+                    throw new TRPCError({
+                        code: "CONFLICT",
+                        message: "This draft changed elsewhere. Reopen it to get the latest version before editing.",
+                    });
+                }
+            }
+
+            const now = new Date();
+            await ctx.db
+                .update(newsletters)
+                .set({
+                    ...(input.subject !== undefined && input.subject.trim()
+                        ? { subject: input.subject.trim() }
+                        : {}),
+                    ...(input.subjectB !== undefined
+                        ? { subjectB: input.subjectB?.trim() || null }
+                        : {}),
+                    ...(input.html !== undefined ? { html: input.html } : {}),
+                    ...(input.preheader !== undefined
+                        ? { preheader: input.preheader.trim() || null }
+                        : {}),
+                    updatedAt: now,
+                })
+                .where(eq(newsletters.id, input.id));
+            // No audit row for autosave — it fires frequently and would flood the
+            // audit log; the explicit Save/update path still records an audit.
+            return { ok: true, updatedAt: now.toISOString() };
+        }),
+
     delete: editorProcedure
         .input(z.object({ id: z.string().min(1) }))
         .mutation(async ({ input, ctx }) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/trpc/client";
 import { Button } from "@/components/ui/button";
@@ -192,6 +192,7 @@ export function NewslettersTable() {
                                             newsletter={n}
                                             onSave={(data) => update.mutate(data)}
                                             saving={update.isPending}
+                                            onSaved={() => utils.adminNewsletter.list.invalidate()}
                                         />
                                         {n.status !== "sent" && (
                                             <ScheduleDialog
@@ -666,6 +667,7 @@ function EditNewsletterDialog({
     newsletter,
     onSave,
     saving,
+    onSaved,
 }: {
     newsletter: {
         id: string;
@@ -675,6 +677,7 @@ function EditNewsletterDialog({
         preheader: string | null;
         html: string;
         status: string;
+        updatedAt?: Date | string | null;
     };
     onSave: (data: {
         id: string;
@@ -686,6 +689,7 @@ function EditNewsletterDialog({
         slug?: string;
     }) => void;
     saving: boolean;
+    onSaved?: () => void;
 }) {
     const [open, setOpen] = useState(false);
     const [subject, setSubject] = useState(newsletter.subject);
@@ -695,6 +699,24 @@ function EditNewsletterDialog({
     const [html, setHtml] = useState(newsletter.html);
     const [status, setStatus] = useState<NewsletterStatus>(newsletter.status as NewsletterStatus);
     const isSent = newsletter.status === "sent";
+    // Autosave is only offered for drafts — a scheduled/sent issue must be
+    // changed deliberately via the explicit Save button (and the server refuses
+    // autosave on non-drafts anyway).
+    const isDraft = newsletter.status === "draft";
+
+    // Autosave state. `lastSaved` drives the "Saved HH:MM" label; `saveState`
+    // shows the transient status. `expectedUpdatedAt` tracks the row version for
+    // optimistic-concurrency so an autosave never clobbers a concurrent edit.
+    const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+    const [lastSaved, setLastSaved] = useState<Date | null>(null);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const expectedUpdatedAtRef = useRef<string | undefined>(undefined);
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Guard: don't autosave the initial hydrate (open resets the fields). Only
+    // real user edits after the dialog is populated should trigger a save.
+    const dirtyRef = useRef(false);
+
+    const saveDraft = trpc.adminNewsletter.saveDraft.useMutation();
 
     useEffect(() => {
         if (!open) return;
@@ -704,7 +726,69 @@ function EditNewsletterDialog({
         setPreheader(newsletter.preheader ?? "");
         setHtml(newsletter.html);
         setStatus(newsletter.status as NewsletterStatus);
+        // Reset autosave bookkeeping for this open.
+        setSaveState("idle");
+        setLastSaved(null);
+        setSaveError(null);
+        dirtyRef.current = false;
+        expectedUpdatedAtRef.current = newsletter.updatedAt
+            ? new Date(newsletter.updatedAt).toISOString()
+            : undefined;
     }, [open, newsletter]);
+
+    const runAutosave = useCallback(() => {
+        saveDraft.mutate(
+            {
+                id: newsletter.id,
+                subject: subject.trim() || undefined,
+                subjectB: subjectB.trim() || null,
+                html,
+                preheader,
+                expectedUpdatedAt: expectedUpdatedAtRef.current,
+            },
+            {
+                onSuccess: (res) => {
+                    expectedUpdatedAtRef.current = res.updatedAt;
+                    setLastSaved(new Date(res.updatedAt));
+                    setSaveState("saved");
+                    setSaveError(null);
+                    onSaved?.();
+                },
+                onError: (err) => {
+                    setSaveState("error");
+                    setSaveError(err.message || "Autosave failed");
+                },
+            }
+        );
+    }, [newsletter.id, subject, subjectB, html, preheader, saveDraft, onSaved]);
+
+    // Debounced autosave: any draft-field change schedules a save ~1.2s later.
+    useEffect(() => {
+        if (!open || !isDraft) return;
+        if (!dirtyRef.current) return;
+        setSaveState("saving");
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => runAutosave(), 1200);
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [subject, subjectB, html, preheader, open, isDraft]);
+
+    // Mark the form dirty on the first real edit so the hydrate effect above
+    // doesn't immediately trigger an autosave.
+    const markDirty = () => {
+        dirtyRef.current = true;
+    };
+
+    const savedLabel =
+        saveState === "saving"
+            ? "Saving\u2026"
+            : saveState === "error"
+              ? saveError || "Autosave failed"
+              : lastSaved
+                ? `Saved ${lastSaved.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
+                : "";
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -715,6 +799,19 @@ function EditNewsletterDialog({
             <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Edit newsletter</DialogTitle>
+                    {isDraft && (
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            {saveState === "saving" && (
+                                <span className="inline-block size-1.5 animate-pulse rounded-full bg-foreground/60" />
+                            )}
+                            {saveState === "saved" && (
+                                <Check className="size-3 text-green-600 dark:text-green-400" />
+                            )}
+                            <span className={saveState === "error" ? "text-destructive" : undefined}>
+                                {savedLabel || "Changes autosave as you edit"}
+                            </span>
+                        </div>
+                    )}
                 </DialogHeader>
 
                 <div className="space-y-4">
@@ -723,7 +820,7 @@ function EditNewsletterDialog({
                             <div className="text-sm font-medium">Subject</div>
                             <Input
                                 value={subject}
-                                onChange={(e) => setSubject(e.target.value)}
+                                onChange={(e) => { markDirty(); setSubject(e.target.value); }}
                                 placeholder="Subject line"
                             />
                         </div>
@@ -748,7 +845,7 @@ function EditNewsletterDialog({
                         </div>
                         <Input
                             value={subjectB}
-                            onChange={(e) => setSubjectB(e.target.value)}
+                            onChange={(e) => { markDirty(); setSubjectB(e.target.value); }}
                             placeholder="Alternate subject line to test against"
                             disabled={isSent}
                         />
@@ -775,7 +872,7 @@ function EditNewsletterDialog({
                         <div className="text-sm font-medium">Preheader <span className="text-muted-foreground font-normal">(optional)</span></div>
                         <Input
                             value={preheader}
-                            onChange={(e) => setPreheader(e.target.value)}
+                            onChange={(e) => { markDirty(); setPreheader(e.target.value); }}
                             placeholder="Short preview text shown in email clients"
                         />
                     </div>
@@ -784,7 +881,7 @@ function EditNewsletterDialog({
                         <div className="text-sm font-medium">Body</div>
                         <NewsletterRichEditor
                             value={html}
-                            onChange={setHtml}
+                            onChange={(v) => { markDirty(); setHtml(v); }}
                             placeholder="Write the email body"
                         />
                     </div>
