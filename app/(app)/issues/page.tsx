@@ -1,6 +1,7 @@
 import { db } from "@/db/client";
 import { newsletters } from "@/db/schemas/newsletters";
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { publications } from "@/db/schemas/publications";
+import { and, count, desc, eq, ilike, isNull, or } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Rss } from "lucide-react";
@@ -40,7 +41,60 @@ export const metadata: Metadata = {
     },
 };
 
-type Props = { searchParams: Promise<{ page?: string; q?: string }> };
+type Props = { searchParams: Promise<{ page?: string; q?: string; publication?: string }> };
+
+export type ArchivePublication = {
+    slug: string;
+    name: string;
+    isPrimary: boolean;
+    issueCount: number;
+};
+
+// Non-archived publications (primary first) with a PUBLISHED-issue count, used
+// to render the archive's per-stream filter chips. The primary stream's count
+// includes legacy NULL-publication issues. Returns [] if publications aren't in
+// use yet, so the filter row simply doesn't render.
+async function getPublications(): Promise<ArchivePublication[]> {
+    try {
+        const rows = await db
+            .select({
+                id: publications.id,
+                slug: publications.slug,
+                name: publications.name,
+                isPrimary: publications.isPrimary,
+            })
+            .from(publications)
+            .where(isNull(publications.archivedAt))
+            .orderBy(desc(publications.isPrimary), publications.name);
+
+        const withCounts = await Promise.all(
+            rows.map(async (p) => {
+                const issueWhere = p.isPrimary
+                    ? and(
+                          eq(newsletters.status, "sent"),
+                          or(
+                              eq(newsletters.publicationId, p.id),
+                              isNull(newsletters.publicationId),
+                          ),
+                      )
+                    : and(
+                          eq(newsletters.status, "sent"),
+                          eq(newsletters.publicationId, p.id),
+                      );
+                const [{ n }] = await db
+                    .select({ n: count() })
+                    .from(newsletters)
+                    .where(issueWhere);
+                return { slug: p.slug, name: p.name, isPrimary: p.isPrimary, issueCount: n };
+            }),
+        );
+        // Only show the filter when there's more than one publication in play
+        // (a single primary stream needs no filter).
+        return withCounts.length > 1 ? withCounts : [];
+    } catch {
+        return [];
+    }
+}
 
 // Server-side archive search. Scans PUBLISHED issues only, matching the query
 // against subject, preheader AND body HTML (case-insensitive substring),
@@ -48,19 +102,42 @@ type Props = { searchParams: Promise<{ page?: string; q?: string }> };
 // GET-addressable search URL (/issues?q=). Draft/scheduled content never reaches
 // the browser. `total` is the count of MATCHING issues; `grandTotal` is the count
 // of all published issues (for the header line when no query is active).
-async function getIssues(q: string, page: number) {
+async function getIssues(q: string, page: number, publicationSlug: string) {
     try {
         const publishedOnly = eq(newsletters.status, "sent");
-        const where = q
-            ? and(
-                  publishedOnly,
-                  or(
-                      ilike(newsletters.subject, `%${q}%`),
-                      ilike(newsletters.preheader, `%${q}%`),
-                      ilike(newsletters.html, `%${q}%`)
-                  )
+
+        // Optional publication-slug filter. Resolve the slug → id; the primary
+        // stream also owns legacy NULL-publication issues.
+        let publicationWhere = undefined as ReturnType<typeof eq> | undefined;
+        if (publicationSlug) {
+            const [pub] = await db
+                .select({ id: publications.id, isPrimary: publications.isPrimary })
+                .from(publications)
+                .where(eq(publications.slug, publicationSlug));
+            if (pub) {
+                publicationWhere = pub.isPrimary
+                    ? (or(
+                          eq(newsletters.publicationId, pub.id),
+                          isNull(newsletters.publicationId),
+                      ) as unknown as ReturnType<typeof eq>)
+                    : eq(newsletters.publicationId, pub.id);
+            } else {
+                publicationWhere = eq(newsletters.publicationId, "__no_such_publication__");
+            }
+        }
+
+        const matchClause = q
+            ? or(
+                  ilike(newsletters.subject, `%${q}%`),
+                  ilike(newsletters.preheader, `%${q}%`),
+                  ilike(newsletters.html, `%${q}%`)
               )
-            : publishedOnly;
+            : undefined;
+        const where = and(
+            publishedOnly,
+            ...(matchClause ? [matchClause] : []),
+            ...(publicationWhere ? [publicationWhere] : []),
+        );
 
         const offset = (page - 1) * PAGE_SIZE;
 
@@ -113,8 +190,12 @@ async function getIssues(q: string, page: number) {
 export default async function IssuesArchivePage({ searchParams }: Props) {
     const sp = await searchParams;
     const q = (sp.q ?? "").trim().slice(0, 200);
+    const publicationSlug = (sp.publication ?? "").trim().slice(0, 80);
     const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1);
-    const { issues, total, grandTotal } = await getIssues(q, page);
+    const [{ issues, total, grandTotal }, pubs] = await Promise.all([
+        getIssues(q, page, publicationSlug),
+        getPublications(),
+    ]);
 
     // CollectionPage describing the archive, with an embedded ItemList that
     // enumerates every published issue (position-ordered, newest first). Good
@@ -182,6 +263,8 @@ export default async function IssuesArchivePage({ searchParams }: Props) {
                 page={page}
                 pageSize={PAGE_SIZE}
                 query={q}
+                publications={pubs}
+                activePublication={publicationSlug || null}
             />
 
             {/* Dismissible floating subscribe affordance for archive browsers. */}

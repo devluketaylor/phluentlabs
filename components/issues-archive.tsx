@@ -32,10 +32,19 @@ function formatDate(ms: number) {
     });
 }
 
-// Build a /issues URL preserving/clearing q + page. Omitting empty params keeps
-// the canonical plain-archive URL clean (/issues rather than /issues?q=&page=1).
-function issuesHref(q: string, page: number) {
+export type ArchivePublication = {
+    slug: string;
+    name: string;
+    isPrimary: boolean;
+    issueCount: number;
+};
+
+// Build a /issues URL preserving/clearing q + page + publication. Omitting empty
+// params keeps the canonical plain-archive URL clean (/issues rather than
+// /issues?q=&page=1).
+function issuesHref(q: string, page: number, publication?: string | null) {
     const params = new URLSearchParams();
+    if (publication) params.set("publication", publication);
     if (q) params.set("q", q);
     if (page > 1) params.set("page", String(page));
     const qs = params.toString();
@@ -55,12 +64,16 @@ export function IssuesArchive({
     page,
     pageSize = 20,
     query,
+    publications = [],
+    activePublication = null,
 }: {
     issues: ArchiveIssue[];
     total: number;
     page: number;
     pageSize?: number;
     query: string;
+    publications?: ArchivePublication[];
+    activePublication?: string | null;
 }) {
     const router = useRouter();
     const [value, setValue] = React.useState(query);
@@ -73,10 +86,10 @@ export function IssuesArchive({
     const submit = React.useCallback(
         (next: string) => {
             const trimmed = next.trim();
-            // New search always resets to page 1.
-            router.push(issuesHref(trimmed, 1));
+            // New search always resets to page 1 (keep the active publication).
+            router.push(issuesHref(trimmed, 1, activePublication));
         },
-        [router]
+        [router, activePublication]
     );
 
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -90,10 +103,44 @@ export function IssuesArchive({
         return [1, "...", safePage - 1, safePage, safePage + 1, "...", totalPages];
     };
 
-    const goto = (p: number) => router.push(issuesHref(query, p));
+    const goto = (p: number) => router.push(issuesHref(query, p, activePublication));
 
     return (
         <div className="space-y-6">
+            {publications.length > 1 && (
+                <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by publication">
+                    <Link
+                        href={issuesHref(query, 1, null)}
+                        className={`inline-flex items-center gap-1.5 border px-3 py-1.5 text-xs transition-colors ${
+                            !activePublication
+                                ? "border-foreground bg-foreground text-background"
+                                : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                        }`}
+                    >
+                        All
+                    </Link>
+                    {publications.map((p) => {
+                        const active = activePublication === p.slug;
+                        return (
+                            <Link
+                                key={p.slug}
+                                href={issuesHref(query, 1, p.slug)}
+                                className={`inline-flex items-center gap-1.5 border px-3 py-1.5 text-xs transition-colors ${
+                                    active
+                                        ? "border-foreground bg-foreground text-background"
+                                        : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                                }`}
+                                title={`${p.issueCount} issue${p.issueCount === 1 ? "" : "s"}`}
+                            >
+                                {p.name}
+                                <span className={active ? "opacity-70" : "text-muted-foreground/70"}>
+                                    {p.issueCount}
+                                </span>
+                            </Link>
+                        );
+                    })}
+                </div>
+            )}
             <form
                 onSubmit={(e) => {
                     e.preventDefault();
@@ -183,7 +230,7 @@ export function IssuesArchive({
                             <PaginationContent>
                                 <PaginationItem>
                                     <PaginationPrevious
-                                        href={issuesHref(query, Math.max(1, safePage - 1))}
+                                        href={issuesHref(query, Math.max(1, safePage - 1), activePublication)}
                                         onClick={(e) => {
                                             e.preventDefault();
                                             goto(Math.max(1, safePage - 1));
@@ -199,7 +246,7 @@ export function IssuesArchive({
                                     ) : (
                                         <PaginationItem key={p}>
                                             <PaginationLink
-                                                href={issuesHref(query, p as number)}
+                                                href={issuesHref(query, p as number, activePublication)}
                                                 isActive={safePage === p}
                                                 onClick={(e) => {
                                                     e.preventDefault();
@@ -214,7 +261,7 @@ export function IssuesArchive({
 
                                 <PaginationItem>
                                     <PaginationNext
-                                        href={issuesHref(query, Math.min(totalPages, safePage + 1))}
+                                        href={issuesHref(query, Math.min(totalPages, safePage + 1), activePublication)}
                                         onClick={(e) => {
                                             e.preventDefault();
                                             goto(Math.min(totalPages, safePage + 1));

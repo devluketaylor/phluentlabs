@@ -16,7 +16,8 @@ import { pageViews } from "@/db/schemas/page-views";
 import { shareClicks } from "@/db/schemas/share-clicks";
 import { issueReactions } from "@/db/schemas/issue-reactions";
 import { feedback } from "@/db/schemas/feedback";
-import { and, arrayContains, count, desc, eq, ilike, isNotNull, lte, or } from "drizzle-orm";
+import { publications } from "@/db/schemas/publications";
+import { and, arrayContains, count, desc, eq, ilike, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { signPreviewToken } from "@/lib/preview-token";
@@ -818,26 +819,56 @@ export const newsletterRouter = router({
                 q: z.string().trim().max(200).default(""),
                 page: z.number().int().min(1).default(1),
                 pageSize: z.number().int().min(1).max(50).default(20),
+                // Optional publication slug filter. When set, restrict the
+                // archive to issues assigned to that publication. The special
+                // slug "primary" (or a slug that resolves to the primary
+                // publication) matches issues on the primary stream — which
+                // includes legacy issues with a NULL publicationId, since a
+                // NULL publicationId is conceptually the primary/default stream.
+                publication: z.string().trim().max(80).optional(),
             })
         )
         .query(async ({ input, ctx }) => {
             const offset = (input.page - 1) * input.pageSize;
             const q = input.q;
 
+            // Resolve an optional publication-slug filter into a WHERE clause.
+            let publicationWhere = undefined as ReturnType<typeof eq> | undefined;
+            if (input.publication) {
+                const [pub] = await ctx.db
+                    .select({ id: publications.id, isPrimary: publications.isPrimary })
+                    .from(publications)
+                    .where(eq(publications.slug, input.publication));
+                if (pub) {
+                    // Primary stream also owns legacy NULL-publication issues.
+                    publicationWhere = pub.isPrimary
+                        ? (or(
+                              eq(newsletters.publicationId, pub.id),
+                              isNull(newsletters.publicationId),
+                          ) as unknown as ReturnType<typeof eq>)
+                        : eq(newsletters.publicationId, pub.id);
+                } else {
+                    // Unknown slug → match nothing (return empty set rather than
+                    // silently ignoring the filter).
+                    publicationWhere = eq(newsletters.publicationId, "__no_such_publication__");
+                }
+            }
+
             // Always constrained to published issues; drafts never leak.
             const publishedOnly = eq(newsletters.status, "sent");
-            // Build a match clause only when there's a query. A blank query falls
-            // back to "all published", so /issues?q= behaves like the plain archive.
-            const where = q
-                ? and(
-                      publishedOnly,
-                      or(
-                          ilike(newsletters.subject, `%${q}%`),
-                          ilike(newsletters.preheader, `%${q}%`),
-                          ilike(newsletters.html, `%${q}%`)
-                      )
+            const matchClause = q
+                ? or(
+                      ilike(newsletters.subject, `%${q}%`),
+                      ilike(newsletters.preheader, `%${q}%`),
+                      ilike(newsletters.html, `%${q}%`)
                   )
-                : publishedOnly;
+                : undefined;
+            // Combine published + (optional) text match + (optional) publication.
+            const where = and(
+                publishedOnly,
+                ...(matchClause ? [matchClause] : []),
+                ...(publicationWhere ? [publicationWhere] : []),
+            );
 
             const [rows, [{ total }]] = await Promise.all([
                 ctx.db
@@ -880,6 +911,48 @@ export const newsletterRouter = router({
                 };
             });
 
-            return { items, total: total ?? items.length, page: input.page, pageSize: input.pageSize, q };
+            return { items, total: total ?? items.length, page: input.page, pageSize: input.pageSize, q, publication: input.publication ?? null };
         }),
+
+    // Public: list the publications shown as archive filters + public opt-in
+    // surfaces. Returns non-archived publications (primary first) with a count
+    // of PUBLISHED issues so the archive can offer a per-stream filter. The
+    // primary stream's count includes legacy NULL-publication issues.
+    publications: publicProcedure.query(async ({ ctx }) => {
+        const rows = await ctx.db
+            .select({
+                id: publications.id,
+                slug: publications.slug,
+                name: publications.name,
+                description: publications.description,
+                isPrimary: publications.isPrimary,
+            })
+            .from(publications)
+            .where(isNull(publications.archivedAt))
+            .orderBy(desc(publications.isPrimary), publications.name);
+
+        const withCounts = await Promise.all(
+            rows.map(async (p) => {
+                const issueWhere = p.isPrimary
+                    ? and(
+                          eq(newsletters.status, "sent"),
+                          or(
+                              eq(newsletters.publicationId, p.id),
+                              isNull(newsletters.publicationId),
+                          ),
+                      )
+                    : and(
+                          eq(newsletters.status, "sent"),
+                          eq(newsletters.publicationId, p.id),
+                      );
+                const [{ n }] = await ctx.db
+                    .select({ n: count() })
+                    .from(newsletters)
+                    .where(issueWhere);
+                return { ...p, issueCount: n };
+            }),
+        );
+
+        return { publications: withCounts };
+    }),
 });

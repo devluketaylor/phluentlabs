@@ -1,7 +1,8 @@
 import {publicProcedure, router} from "@/trpc/server";
 import {z} from "zod";
 import {subscribers} from "@/db/schemas/subscribers";
-import {and, count, eq} from "drizzle-orm";
+import {publications, subscriberPublications} from "@/db/schemas/publications";
+import {and, count, eq, isNull} from "drizzle-orm";
 import {signSubscriberToken, verifySubscriberToken} from "@/lib/subscriber-token";
 import {generateReferralCode} from "@/lib/referral";
 import {computeReferralProgress} from "@/lib/referral-tiers";
@@ -379,5 +380,107 @@ export const subscribeRouter = router({
                     .where(eq(subscribers.id, payload.subId));
 
                 return { ok: true };
+            }),
+
+        // ── Per-publication opt-in (public, prefs-token-gated) ─────────────
+        // The publications foundation (migration 0014) is additive + opt-in.
+        // These two endpoints are the PUBLIC opt-in surface: a confirmed
+        // subscriber (identified by their prefs token) can list all
+        // non-archived publications and toggle their own opt-in for each
+        // NON-PRIMARY publication. The primary/default stream reaches every
+        // confirmed subscriber with NO join row, so it's shown as always-on and
+        // is never toggleable here (you manage the primary stream by
+        // pausing/unsubscribing above).
+
+        // List all non-archived publications + whether the caller is opted in.
+        getPublicationOptIns: publicProcedure
+            .input(z.object({ token: z.string().min(1) }))
+            .query(async ({ input, ctx }) => {
+                const payload = await verifySubscriberToken(input.token);
+                if (payload.scope !== "prefs") throw new Error("Invalid token")
+
+                const [me] = await ctx.db
+                    .select({ id: subscribers.id })
+                    .from(subscribers)
+                    .where(eq(subscribers.id, payload.subId));
+                if (!me) throw new Error("Subscriber not found");
+
+                const pubs = await ctx.db
+                    .select({
+                        id: publications.id,
+                        slug: publications.slug,
+                        name: publications.name,
+                        description: publications.description,
+                        isPrimary: publications.isPrimary,
+                    })
+                    .from(publications)
+                    .where(isNull(publications.archivedAt))
+                    .orderBy(publications.isPrimary, publications.name);
+
+                const optRows = await ctx.db
+                    .select({ publicationId: subscriberPublications.publicationId })
+                    .from(subscriberPublications)
+                    .where(eq(subscriberPublications.subscriberId, me.id));
+                const optedIn = new Set(optRows.map((r) => r.publicationId));
+
+                return {
+                    publications: pubs.map((p) => ({
+                        id: p.id,
+                        slug: p.slug,
+                        name: p.name,
+                        description: p.description,
+                        isPrimary: p.isPrimary,
+                        // Primary is always-on (all confirmed subscribers get it
+                        // with no join row); non-primary reflects the join.
+                        optedIn: p.isPrimary ? true : optedIn.has(p.id),
+                    })),
+                };
+            }),
+
+        // Toggle the caller's opt-in for a SINGLE non-primary publication.
+        // Token-gated (scope "prefs"), own-row only. Idempotent: opting in twice
+        // is a no-op (onConflictDoNothing); opting out with no row is a no-op.
+        updatePublicationOptIn: publicProcedure
+            .input(z.object({
+                token: z.string().min(1),
+                publicationId: z.string().min(1),
+                optIn: z.boolean(),
+            }))
+            .mutation(async ({ input, ctx }) => {
+                const payload = await verifySubscriberToken(input.token);
+                if (payload.scope !== "prefs") throw new Error("Invalid token")
+
+                const [me] = await ctx.db
+                    .select({ id: subscribers.id })
+                    .from(subscribers)
+                    .where(eq(subscribers.id, payload.subId));
+                if (!me) throw new Error("Subscriber not found");
+
+                // Only non-archived publications are toggleable; the PRIMARY
+                // stream can't be opted out of here (it's the default list —
+                // use pause/unsubscribe for that).
+                const [pub] = await ctx.db
+                    .select({ id: publications.id, isPrimary: publications.isPrimary, archivedAt: publications.archivedAt })
+                    .from(publications)
+                    .where(eq(publications.id, input.publicationId));
+                if (!pub) throw new Error("Publication not found");
+                if (pub.isPrimary) throw new Error("The primary stream can't be toggled here");
+                if (pub.archivedAt) throw new Error("This publication is no longer accepting opt-ins");
+
+                if (input.optIn) {
+                    await ctx.db
+                        .insert(subscriberPublications)
+                        .values({ subscriberId: me.id, publicationId: pub.id })
+                        .onConflictDoNothing();
+                } else {
+                    await ctx.db
+                        .delete(subscriberPublications)
+                        .where(and(
+                            eq(subscriberPublications.subscriberId, me.id),
+                            eq(subscriberPublications.publicationId, pub.id),
+                        ));
+                }
+
+                return { ok: true, optedIn: input.optIn };
             }),
 })

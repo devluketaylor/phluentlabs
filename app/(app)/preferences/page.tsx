@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Check, Gift, Pause, Play, UserX } from "lucide-react";
+import { Check, Gift, Layers, Pause, Play, UserX } from "lucide-react";
 import { ReferralMilestones } from "@/components/referral-milestones";
 
 function PreferencesContent() {
@@ -29,6 +29,24 @@ function PreferencesContent() {
         { token },
         { enabled: !!token, retry: false, staleTime: 60 * 1000 },
     );
+
+    // Per-publication opt-ins (prefs-token variant). Only surfaces when more
+    // than one publication exists (i.e. there's a real choice to make).
+    const pubOptIns = trpc.subscribe.getPublicationOptIns.useQuery(
+        { token },
+        { enabled: !!token, retry: false, staleTime: 60 * 1000 },
+    );
+    const togglePub = trpc.subscribe.updatePublicationOptIn.useMutation();
+
+    const setPublicationOptIn = async (publicationId: string, optIn: boolean) => {
+        try {
+            await togglePub.mutateAsync({ token, publicationId, optIn });
+            await utils.subscribe.getPublicationOptIns.invalidate({ token });
+            toast.success(optIn ? "Subscribed to that stream." : "Unsubscribed from that stream.");
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Something went wrong.");
+        }
+    };
 
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
@@ -140,6 +158,59 @@ function PreferencesContent() {
                         developer{referral.data.referralCount === 1 ? "" : "s"}.
                     </p>
                     <ReferralMilestones progress={referral.data.progress} />
+                </div>
+            ) : null}
+
+            {/* Per-publication opt-ins — only when there's more than one stream. */}
+            {pubOptIns.data && pubOptIns.data.publications.length > 1 && status !== "unsubscribed" ? (
+                <div className="mt-6 rounded-xl border bg-card p-4">
+                    <div className="flex items-center gap-2">
+                        <Layers className="size-4 text-primary" />
+                        <p className="text-sm font-medium">Your subscriptions</p>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        Choose which streams you want to receive.
+                    </p>
+                    <div className="mt-3 space-y-2">
+                        {pubOptIns.data.publications.map((p) => (
+                            <div
+                                key={p.id}
+                                className="flex items-start justify-between gap-3 border-b border-border pb-2 last:border-b-0 last:pb-0"
+                            >
+                                <div className="min-w-0">
+                                    <p className="text-sm font-medium text-foreground">{p.name}</p>
+                                    {p.description ? (
+                                        <p className="text-xs text-muted-foreground">{p.description}</p>
+                                    ) : null}
+                                </div>
+                                {p.isPrimary ? (
+                                    <span className="shrink-0 inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                                        Always on
+                                    </span>
+                                ) : p.optedIn ? (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="shrink-0"
+                                        onClick={() => setPublicationOptIn(p.id, false)}
+                                        disabled={togglePub.isPending}
+                                    >
+                                        <Check className="size-4" /> Subscribed
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="shrink-0 text-muted-foreground"
+                                        onClick={() => setPublicationOptIn(p.id, true)}
+                                        disabled={togglePub.isPending}
+                                    >
+                                        Subscribe
+                                    </Button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
                 </div>
             ) : null}
 
