@@ -23,7 +23,7 @@ export function NewsletterList() {
         return (
             <div className="space-y-3">
                 {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-20 rounded-xl border bg-muted animate-pulse" />
+                    <div key={i} className="h-20 border border-border bg-muted animate-pulse" />
                 ))}
             </div>
         );
@@ -52,10 +52,10 @@ export function NewsletterList() {
                     <li key={issue.id}>
                         <Link
                             href={`/issues/${issue.slug ?? issue.id}`}
-                            className="group flex items-start justify-between gap-4 rounded-xl border p-4 hover:bg-muted/50 transition-colors"
+                            className="group flex items-start justify-between gap-4 border border-border p-4 transition-colors hover:border-foreground/30 hover:bg-muted/40"
                         >
                             <div className="flex flex-col gap-1 min-w-0">
-                                <span className="font-medium text-sm group-hover:text-primary transition-colors truncate">
+                                <span className="font-medium text-sm transition-colors truncate group-hover:text-foreground">
                                     {issue.subject}
                                 </span>
                                 {issue.preheader && (

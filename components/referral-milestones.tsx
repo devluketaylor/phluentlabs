@@ -10,7 +10,7 @@ import type { ReferralProgress } from "@/lib/referral-tiers";
  * subscriber's referral count. Presentation only; the progress object is
  * computed server-side (computeReferralProgress) and passed in.
  *
- * Coral accent (#ff5c5c → the `primary` token) marks the current tier and the
+ * Monochrome accent (the `primary` token) marks the current tier and the
  * progress bar; everything else uses theme tokens so it stays clean in light +
  * dark mode.
  */
@@ -65,10 +65,9 @@ export function ReferralMilestones({ progress }: { progress: ReferralProgress })
                     aria-label={`Progress toward ${nextTier.name}`}
                 >
                     <div
-                        className="h-full rounded-full transition-all"
+                        className="h-full rounded-full bg-primary transition-all"
                         style={{
                             width: `${percentToNext}%`,
-                            backgroundColor: "#ff5c5c",
                         }}
                     />
                 </div>

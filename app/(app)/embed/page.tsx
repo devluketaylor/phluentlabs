@@ -44,7 +44,7 @@ export default function EmbedPage() {
                 </p>
                 <p>
                     Building a custom integration instead? Use the{" "}
-                    <a href="/docs/api" className="text-[#ff5c5c] underline underline-offset-4">
+                    <a href="/docs/api" className="text-primary underline underline-offset-4">
                         subscribe API
                     </a>{" "}
                     to enroll people programmatically.

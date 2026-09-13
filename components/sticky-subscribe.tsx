@@ -99,7 +99,7 @@ function StickySubscribeInner() {
 
     return (
         <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-3 sm:px-4 sm:pb-4">
-            <div className="pointer-events-auto w-full max-w-2xl rounded-2xl border bg-card/95 p-3 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:p-4">
+            <div className="pointer-events-auto relative w-full max-w-2xl border border-border bg-card/95 p-3 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-card/80 sm:p-4">
                 <button
                     type="button"
                     onClick={dismiss}
@@ -138,8 +138,6 @@ function StickySubscribeInner() {
                             <Button
                                 type="submit"
                                 disabled={subscribe.isPending}
-                                style={{ backgroundColor: "#ff5c5c" }}
-                                className="text-white hover:opacity-90"
                             >
                                 {subscribe.isPending ? "Subscribing…" : "Subscribe"}
                             </Button>

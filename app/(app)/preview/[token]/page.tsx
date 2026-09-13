@@ -49,12 +49,9 @@ export default async function PreviewPage({ params }: Props) {
     return (
         <div className="max-w-2xl mx-auto px-4 py-10 sm:px-6 sm:py-12">
             {/* Proof banner: makes it unmistakable this is an unsent preview, not
-                a published issue. Coral accent, theme tokens (light+dark safe). */}
-            <div
-                className="mb-8 flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm"
-                style={{ borderColor: "#ff5c5c", backgroundColor: "rgba(255,92,92,0.08)" }}
-            >
-                <Eye className="h-4 w-4 shrink-0" style={{ color: "#ff5c5c" }} />
+                a published issue. Monochrome, theme tokens (light+dark safe). */}
+            <div className="mb-8 flex items-center gap-2.5 border border-border bg-muted px-4 py-3 text-sm">
+                <Eye className="h-4 w-4 shrink-0 text-foreground" />
                 <span className="text-foreground">
                     <span className="font-semibold">Preview</span>{" "}
                     <span className="text-muted-foreground">

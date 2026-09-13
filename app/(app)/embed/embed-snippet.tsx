@@ -57,7 +57,7 @@ export function EmbedSnippet() {
                         type="checkbox"
                         checked={collectName}
                         onChange={(e) => setCollectName(e.target.checked)}
-                        className="size-4 accent-[#ff5c5c]"
+                        className="size-4 accent-foreground"
                     />
                     Also collect a first name
                 </label>

@@ -39,7 +39,7 @@ function UnsubscribeContent() {
                 </Button>
 
                 {unsubscribe.error ? (
-                    <p className="text-sm text-red-500">{unsubscribe.error.message}</p>
+                    <p className="text-sm text-destructive">{unsubscribe.error.message}</p>
                 ) : null}
 
                 {unsubscribe.isSuccess ? (

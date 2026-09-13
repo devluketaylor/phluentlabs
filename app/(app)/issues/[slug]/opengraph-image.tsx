@@ -54,7 +54,7 @@ export default async function Image({ params }: Props) {
                     display: "flex",
                     flexDirection: "column",
                     justifyContent: "space-between",
-                    background: "linear-gradient(135deg, #0a0a0a 0%, #1a0e0e 60%, #2a1010 100%)",
+                    background: "linear-gradient(135deg, #000000 0%, #0f0f0f 60%, #1a1a1a 100%)",
                     padding: "70px",
                     fontFamily: "sans-serif",
                 }}
@@ -64,7 +64,7 @@ export default async function Image({ params }: Props) {
                 <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                     <div
                         style={{
-                            color: "#ff5c5c",
+                            color: "#ffffff",
                             fontSize: 30,
                             fontWeight: 700,
                             letterSpacing: "-0.5px",

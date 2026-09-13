@@ -45,7 +45,7 @@ export default function DeliverabilityDocsPage() {
                             href="https://resend.com/domains"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-[#ff5c5c] underline underline-offset-4"
+                            className="text-primary underline underline-offset-4"
                         >
                             Open Resend → Domains
                         </a>
@@ -136,7 +136,7 @@ Value: v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com; fo=1`}</code>
                                 href="https://www.mail-tester.com"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-[#ff5c5c] underline underline-offset-4"
+                                className="text-primary underline underline-offset-4"
                             >
                                 mail-tester.com
                             </a>{" "}
@@ -195,7 +195,7 @@ Value: v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com; fo=1`}</code>
                     quick links in the{" "}
                     <a
                         href="/admin/deliverability"
-                        className="text-[#ff5c5c] underline underline-offset-4"
+                        className="text-primary underline underline-offset-4"
                     >
                         deliverability panel
                     </a>
@@ -205,7 +205,7 @@ Value: v=DMARC1; p=none; rua=mailto:dmarc@yourdomain.com; fo=1`}</code>
                     Building an integration? See the{" "}
                     <a
                         href="/docs/api"
-                        className="text-[#ff5c5c] underline underline-offset-4"
+                        className="text-primary underline underline-offset-4"
                     >
                         subscribe API docs
                     </a>

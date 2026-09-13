@@ -125,18 +125,16 @@ function HomePageInner() {
     return (
         <main className="mx-auto max-w-2xl px-4 sm:px-6">
             {/* Hero */}
-            <section className="py-12 sm:py-16 text-center space-y-4">
-                <div className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs text-muted-foreground mb-2">
-                    every sunday · for developers
+            <section className="py-16 sm:py-20 text-center space-y-5">
+                <div className="eyebrow inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-muted-foreground">
+                    Every Sunday · For developers
                 </div>
-                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
-                    <span className="bg-linear-to-tr from-primary to-red-500 bg-clip-text text-transparent">
-                        Phluent
-                    </span>
+                <h1 className="text-4xl sm:text-5xl font-bold tracking-tight">
+                    <span className="text-foreground">Phluent</span>
                     <span className="text-muted-foreground">Labs</span>
                 </h1>
                 <p className="text-muted-foreground text-lg max-w-md mx-auto leading-relaxed">
-                    What I'm noticing while building the web. — straight to your inbox.
+                    What I&apos;m noticing while building the web — straight to your inbox.
                 </p>
                 {(() => {
                     const n = subscriberCount.data?.count ?? 0;
@@ -161,8 +159,8 @@ function HomePageInner() {
             </section>
 
             {/* Subscribe form */}
-            <section className="rounded-2xl border bg-card p-5 sm:p-6 shadow-sm">
-                <h2 className="font-semibold mb-4">Subscribe for free</h2>
+            <section className="border border-border bg-card p-6 sm:p-8">
+                <h2 className="eyebrow mb-4 text-muted-foreground">Subscribe for free</h2>
                 <FormProvider {...methods}>
                     <Form {...methods}>
                         <SubscribeForm<SubscribeValues>
@@ -205,10 +203,10 @@ function HomePageInner() {
             {/* Past issues */}
             <section className="pb-16">
                 <div className="flex items-baseline justify-between mb-6">
-                    <h2 className="text-lg font-semibold">Past issues</h2>
+                    <h2 className="eyebrow text-muted-foreground">Past issues</h2>
                     <a
                         href="/issues"
-                        className="text-sm text-muted-foreground transition-colors hover:text-primary"
+                        className="text-sm text-muted-foreground transition-colors hover:text-foreground"
                     >
                         View all &rarr;
                     </a>

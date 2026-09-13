@@ -3,15 +3,23 @@ import {FaTwitter} from "react-icons/fa";
 
 export const Footer = () => {
     return (
-        <footer className={"border-t border-border py-3 px-3"}>
+        <footer className={"border-t border-border py-6 px-3"}>
             <div className={"max-w-6xl mx-auto flex items-center justify-between"}>
-            <div>
-                <Link href={""}><span className={"bg-linear-to-tr from-primary to-red-500 bg-clip-text text-transparent"}>Phluent</span>Labs</Link>
-                <p className={"text-muted-foreground text-sm"}>A developers newsletter.</p>
+            <div className={"space-y-0.5"}>
+                <Link href={"/"} className={"text-sm font-semibold tracking-tight"}>
+                    <span className={"text-foreground"}>Phluent</span><span className={"text-muted-foreground"}>Labs</span>
+                </Link>
+                <p className={"text-muted-foreground text-xs"}>A developer newsletter, every Sunday.</p>
             </div>
 
             <div>
-                <Link href={""} target="_blank" rel="noopener noreferrer">
+                <Link
+                    href={"https://x.com/phluentlabs"}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={"PhluentLabs on X"}
+                    className={"text-muted-foreground transition-colors hover:text-foreground"}
+                >
                     <FaTwitter />
                 </Link>
             </div>

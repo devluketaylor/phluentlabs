@@ -114,7 +114,10 @@ export default function RootLayout({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(siteJsonLd) }}
       />
-      <ThemeProvider attribute={"class"} disableTransitionOnChange={true} defaultTheme={"system"}>
+      {/* Dark is the intended default/primary look; light is opt-in via the
+          switcher. enableSystem is off so the futuristic dark palette is the
+          guaranteed out-of-box experience. */}
+      <ThemeProvider attribute={"class"} disableTransitionOnChange={true} defaultTheme={"dark"} enableSystem={false}>
           <Providers>
               {children}
               <Toaster />

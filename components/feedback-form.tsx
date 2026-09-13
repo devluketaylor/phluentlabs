@@ -74,8 +74,8 @@ function FeedbackFormInner() {
     if (done) {
         return (
             <Card className="mt-8 p-6 text-center sm:p-8">
-                <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-[#ff5c5c]/10">
-                    <Check className="h-5 w-5 text-[#ff5c5c]" />
+                <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-muted">
+                    <Check className="h-5 w-5 text-foreground" />
                 </div>
                 <h2 className="text-lg font-semibold">Thanks — got it</h2>
                 <p className="mt-1 text-sm text-muted-foreground">

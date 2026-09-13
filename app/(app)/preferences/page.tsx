@@ -120,14 +120,7 @@ function PreferencesContent() {
 
             <div className="mt-2 flex items-center gap-2 text-sm">
                 <span className="text-muted-foreground">Status:</span>
-                <span
-                    className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium"
-                    style={{
-                        borderColor: "#ff5c5c",
-                        color: "#ff5c5c",
-                        backgroundColor: "rgba(255,92,92,0.08)",
-                    }}
-                >
+                <span className="inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-medium text-foreground">
                     {statusLabel}
                 </span>
             </div>

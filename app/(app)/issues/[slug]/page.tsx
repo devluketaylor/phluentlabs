@@ -256,12 +256,12 @@ async function IssueNav({
             {prev ? (
                 <Link
                     href={`/issues/${prev.slug}`}
-                    className="group flex flex-col gap-1 rounded-xl border p-4 transition-colors hover:bg-muted/50 sm:text-left"
+                    className="group flex flex-col gap-1 border border-border p-4 transition-colors hover:border-foreground/30 hover:bg-muted/40 sm:text-left"
                 >
                     <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                         <ArrowLeft className="h-3.5 w-3.5" /> Previous issue
                     </span>
-                    <span className="text-sm font-medium group-hover:text-primary transition-colors line-clamp-2">
+                    <span className="text-sm font-medium transition-colors line-clamp-2 group-hover:text-foreground">
                         {prev.subject}
                     </span>
                 </Link>
@@ -272,12 +272,12 @@ async function IssueNav({
             {next && (
                 <Link
                     href={`/issues/${next.slug}`}
-                    className="group flex flex-col gap-1 rounded-xl border p-4 transition-colors hover:bg-muted/50 sm:items-end sm:text-right"
+                    className="group flex flex-col gap-1 border border-border p-4 transition-colors hover:border-foreground/30 hover:bg-muted/40 sm:items-end sm:text-right"
                 >
                     <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                         Next issue <ArrowRight className="h-3.5 w-3.5" />
                     </span>
-                    <span className="text-sm font-medium group-hover:text-primary transition-colors line-clamp-2">
+                    <span className="text-sm font-medium transition-colors line-clamp-2 group-hover:text-foreground">
                         {next.subject}
                     </span>
                 </Link>

@@ -53,7 +53,7 @@ export function IssueShare({
     };
 
     const btnClass =
-        "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground hover:border-[#ff5c5c] hover:bg-muted";
+        "inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground hover:border-foreground/40 hover:bg-muted";
 
     return (
         <div className="mt-10 flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">

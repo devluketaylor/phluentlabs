@@ -152,10 +152,10 @@ export function IssuesArchive({
                             <li key={issue.id}>
                                 <Link
                                     href={`/issues/${issue.slug}`}
-                                    className="group flex items-start justify-between gap-4 rounded-xl border p-4 transition-colors hover:bg-muted/50"
+                                    className="group flex items-start justify-between gap-4 border border-border p-4 transition-colors hover:border-foreground/30 hover:bg-muted/40"
                                 >
                                     <div className="flex min-w-0 flex-col gap-1">
-                                        <span className="truncate text-sm font-medium transition-colors group-hover:text-primary">
+                                        <span className="truncate text-sm font-medium transition-colors group-hover:text-foreground">
                                             {issue.subject}
                                         </span>
                                         {issue.preheader && (

@@ -1,25 +1,33 @@
 "use client"
 
 import {Button} from "@/components/ui/button";
-import {Plus, Twitter, XIcon} from "lucide-react";
 import {ThemeSwitcher} from "@/components/theme-switcher";
 import Link from "next/link";
 import {FaTwitter} from "react-icons/fa";
-import {auth} from "@/lib/auth";
 import {authClient} from "@/lib/auth-client";
 
 export const Navbar = () => {
     return (
-        <nav className={"bg-navbar border-b px-3 fixed w-full bg-background/20 backdrop-blur-2xl"}>
+        <nav className={"fixed w-full border-b border-border bg-background/70 px-3 backdrop-blur-xl"}>
             <div className={"flex items-center justify-between max-w-6xl mx-auto py-3"}>
             <div>
-                <Link href={"/"}>
-                <h1 className={"text-muted-foreground"}><span className={"bg-linear-to-tr from-primary to-red-500 text-transparent bg-clip-text font-bold"}>Phluent</span><span>Labs</span></h1>
+                <Link href={"/"} className={"group"}>
+                <span className={"text-base font-semibold tracking-tight"}>
+                    <span className={"text-foreground"}>Phluent</span><span className={"text-muted-foreground"}>Labs</span>
+                </span>
                 </Link>
             </div>
 
-            <div className={"flex items-center gap-3"}>
-                <Link href={"/"}><FaTwitter /></Link>
+            <div className={"flex items-center gap-2"}>
+                <Link
+                    href={"https://x.com/phluentlabs"}
+                    target={"_blank"}
+                    rel={"noopener noreferrer"}
+                    aria-label={"PhluentLabs on X"}
+                    className={"text-muted-foreground transition-colors hover:text-foreground"}
+                >
+                    <FaTwitter />
+                </Link>
                 <ThemeSwitcher />
             </div>
             </div>

@@ -60,7 +60,7 @@ export default function ApiDocsPage() {
                     <h2 className="font-semibold">Request body</h2>
                     <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
                         <li>
-                            <code>email</code> <span className="text-[#ff5c5c]">(required)</span> — the
+                            <code>email</code> <span className="text-primary">(required)</span> — the
                             subscriber&apos;s email address.
                         </li>
                         <li>
@@ -107,14 +107,14 @@ export default function ApiDocsPage() {
             <section className="text-muted-foreground space-y-2 py-10 text-sm">
                 <p>
                     Prefer a no-code option? See the{" "}
-                    <a href="/embed" className="text-[#ff5c5c] underline underline-offset-4">
+                    <a href="/embed" className="text-primary underline underline-offset-4">
                         embeddable subscribe form
                     </a>
                     .
                 </p>
                 <p>
                     Making sure your emails land in the inbox? See the{" "}
-                    <a href="/docs/deliverability" className="text-[#ff5c5c] underline underline-offset-4">
+                    <a href="/docs/deliverability" className="text-primary underline underline-offset-4">
                         deliverability guide
                     </a>
                     .

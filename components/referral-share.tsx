@@ -18,7 +18,7 @@ import { ReferralMilestones } from "@/components/referral-milestones";
  * count and shows: their personal share link, a copy-link button with copied
  * feedback, and how many developers they've referred so far.
  *
- * Coral accent (#ff5c5c → the `primary` token) is used for the accent; every
+ * Monochrome accent (the `primary` token) is used for the accent; every
  * other color is a theme token so it stays clean in light + dark mode.
  */
 export function ReferralShare({ token }: { token: string }) {

@@ -59,7 +59,7 @@ function IssueSubscribeCtaInner() {
     };
 
     return (
-        <section className="mt-16 rounded-2xl border bg-card p-6 sm:p-8 text-center">
+        <section className="mt-16 border border-border bg-card p-6 sm:p-8 text-center">
             {done ? (
                 <div className="space-y-2">
                     <h3 className="text-lg font-semibold">Almost there — check your inbox</h3>

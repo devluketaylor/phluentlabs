@@ -11,7 +11,9 @@ export default function manifest(): MetadataRoute.Manifest {
             "What I'm noticing while building the web — a weekly newsletter for developers.",
         start_url: "/",
         display: "standalone",
-        background_color: "#ffffff",
-        theme_color: "#ff5c5c",
+        // Dark is the primary/default look — the manifest chrome color matches
+        // the near-black futuristic background (retired the old coral).
+        background_color: "#0a0a0a",
+        theme_color: "#0a0a0a",
     };
 }

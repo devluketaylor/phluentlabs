@@ -23,7 +23,7 @@ const OPTIONS: Array<{
  * Records a coarse reaction (up / so-so / down) via /api/reactions. No PII —
  * per-reader dedupe is client-side only (localStorage), so a returning reader
  * isn't nudged to vote again on the same issue. Theme-token styled (light+dark
- * safe), coral (#ff5c5c) accent on the chosen option.
+ * safe), monochrome high-contrast accent on the chosen option.
  */
 export function IssueReactions({ slug }: { slug: string }) {
     const [chosen, setChosen] = useState<Reaction | null>(null);
@@ -84,10 +84,10 @@ export function IssueReactions({ slug }: { slug: string }) {
     };
 
     const btnBase =
-        "inline-flex flex-col items-center gap-1 rounded-xl border px-5 py-3 text-sm font-medium transition-colors";
+        "inline-flex flex-col items-center gap-1 border border-border px-5 py-3 text-sm font-medium transition-colors";
 
     return (
-        <div className="mt-8 rounded-2xl border bg-card p-6">
+        <div className="mt-8 border border-border bg-card p-6">
             {chosen ? (
                 <div className="flex flex-col items-center gap-3 text-center">
                     <p className="text-sm font-medium text-foreground">
@@ -116,7 +116,7 @@ export function IssueReactions({ slug }: { slug: string }) {
                                 type="button"
                                 onClick={() => vote(value)}
                                 aria-label={label}
-                                className={`${btnBase} text-muted-foreground hover:border-[#ff5c5c] hover:text-foreground hover:bg-muted`}
+                                className={`${btnBase} text-muted-foreground hover:border-foreground/40 hover:text-foreground hover:bg-muted`}
                             >
                                 <Icon className="size-5" />
                                 <span>{label}</span>
