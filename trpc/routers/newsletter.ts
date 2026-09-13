@@ -187,6 +187,51 @@ export const adminNewsletterRouter = router({
             return { ok: true };
         }),
 
+    // Duplicate an existing issue into a fresh DRAFT — a common newsletter
+    // workflow (reuse a past issue as a starting template for a recurring
+    // format). The copy is ALWAYS a new draft with its own id/slug and NO
+    // send state (never inherits scheduledAt/sentAt/analytics), so cloning a
+    // sent issue can never accidentally re-publish or re-send anything. Content
+    // (html, preheader, publication, A/B subjectB) carries over; the subject is
+    // prefixed "Copy of " so it's obvious in the list.
+    duplicate: editorProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .mutation(async ({ input, ctx }) => {
+            const [source] = await ctx.db
+                .select()
+                .from(newsletters)
+                .where(eq(newsletters.id, input.id));
+            if (!source) {
+                throw new TRPCError({ code: "NOT_FOUND", message: "Newsletter not found" });
+            }
+
+            const id = crypto.randomUUID();
+            const newSubject = `Copy of ${source.subject}`.slice(0, 500);
+            const baseSlug = toSlug(source.subject);
+            const slug = baseSlug
+                ? `${baseSlug}-${id.slice(0, 8)}`
+                : id.slice(0, 8);
+
+            await ctx.db.insert(newsletters).values({
+                id,
+                slug,
+                subject: newSubject,
+                subjectB: source.subjectB ?? null,
+                html: source.html,
+                preheader: source.preheader ?? null,
+                publicationId: source.publicationId ?? null,
+                status: "draft",
+                createdBy: ctx.adminUserId,
+            });
+            await recordAudit(ctx, {
+                action: "newsletter.duplicate",
+                targetType: "newsletter",
+                targetId: id,
+                metadata: { sourceId: source.id, subject: newSubject, slug },
+            });
+            return { ok: true, id, slug };
+        }),
+
     // Mint a signed, expiring PREVIEW link that renders an UNSENT draft exactly
     // as it will look, so a reviewer can proof it on any device before send.
     // Read-only action (creates no data), so any admin-role member may proof —

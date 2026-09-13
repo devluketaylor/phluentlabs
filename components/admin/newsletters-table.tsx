@@ -32,7 +32,7 @@ import {
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
-import { BarChart3, Link2, Check } from "lucide-react";
+import { BarChart3, Link2, Check, Copy } from "lucide-react";
 
 type NewsletterStatus = "draft" | "scheduled" | "sent";
 
@@ -87,6 +87,15 @@ export function NewslettersTable() {
             toast.success("Newsletter deleted");
         },
         onError: (err) => toast.error(err.message || "Failed to delete newsletter"),
+    });
+
+    const duplicate = trpc.adminNewsletter.duplicate.useMutation({
+        onSuccess: () => {
+            utils.adminNewsletter.list.invalidate();
+            setPage(0);
+            toast.success("Duplicated as a new draft");
+        },
+        onError: (err) => toast.error(err.message || "Failed to duplicate newsletter"),
     });
 
     const send = trpc.adminNewsletter.send.useMutation({
@@ -200,6 +209,16 @@ export function NewslettersTable() {
                                                 error={send.error?.message}
                                             />
                                         )}
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            title="Duplicate as a new draft"
+                                            onClick={() => duplicate.mutate({ id: n.id })}
+                                            disabled={duplicate.isPending}
+                                        >
+                                            <Copy className="size-4" />
+                                            Duplicate
+                                        </Button>
                                         <Button
                                             variant="destructive"
                                             size="sm"
