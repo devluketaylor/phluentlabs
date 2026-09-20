@@ -103,6 +103,36 @@ export default async function HomePage() {
         })),
     };
 
+    // FAQPage structured data — mirrors the on-page FAQ accordion so Google can
+    // surface FAQ rich results. Keep the Q/A text in sync with FAQS in
+    // home-client.tsx.
+    const faqJsonLd = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        mainEntity: [
+            {
+                q: "Is it really free?",
+                a: "Yes — completely free, forever. No paywall, no premium tier, no catch. Just a good weekly read.",
+            },
+            {
+                q: "How often will you email me?",
+                a: "Once a week, every Sunday. One focused issue — never drip campaigns, never spam, never a sales blast.",
+            },
+            {
+                q: "What's it actually about?",
+                a: "The web as it's actually built: tools, patterns, and shifts pulled from real projects that shipped. Practical over hype, always filtered for signal.",
+            },
+            {
+                q: "Can I unsubscribe?",
+                a: "Anytime, in one click — every issue has an unsubscribe link, no hard feelings. You can also pause or update your preferences instead of leaving entirely.",
+            },
+        ].map((f) => ({
+            "@type": "Question",
+            name: f.q,
+            acceptedAnswer: { "@type": "Answer", text: f.a },
+        })),
+    };
+
     const itemListJsonLd = {
         "@context": "https://schema.org",
         "@type": "ItemList",
@@ -126,6 +156,10 @@ export default async function HomePage() {
             <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+            />
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
             />
             <HomeClient featured={featuredData} issueCount={recent.length} />
         </>

@@ -84,6 +84,28 @@ const TESTIMONIALS = [
     },
 ];
 
+// Short FAQ — answers the four questions every prospective subscriber has
+// before they hand over an email. Rendered as native <details> accordions
+// (no raw Radix; keyboard-accessible + zero-JS-safe by default).
+const FAQS = [
+    {
+        q: "Is it really free?",
+        a: "Yes — completely free, forever. No paywall, no premium tier, no catch. Just a good weekly read.",
+    },
+    {
+        q: "How often will you email me?",
+        a: "Once a week, every Sunday. One focused issue — never drip campaigns, never spam, never a sales blast.",
+    },
+    {
+        q: "What's it actually about?",
+        a: "The web as it's actually built: tools, patterns, and shifts pulled from real projects that shipped. Practical over hype, always filtered for signal.",
+    },
+    {
+        q: "Can I unsubscribe?",
+        a: "Anytime, in one click — every issue has an unsubscribe link, no hard feelings. You can also pause or update your preferences instead of leaving entirely.",
+    },
+];
+
 function formatDate(iso: string | null) {
     if (!iso) return "";
     return new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -445,6 +467,62 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                 </FormProvider>
             </div>
             </div>
+            </section>
+
+            {/* FAQ — native <details> accordion, monochrome */}
+            <section className="mx-auto max-w-5xl px-4 sm:px-6 pt-16 sm:pt-20">
+                <h2 className="eyebrow mb-8 text-muted-foreground">Frequently asked</h2>
+                <div className="border border-border">
+                    {FAQS.map((f, i) => (
+                        <details
+                            key={f.q}
+                            className={`group bg-card ${i > 0 ? "border-t border-border" : ""}`}
+                        >
+                            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5 sm:p-6 text-base font-medium transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
+                                {f.q}
+                                <ArrowRight
+                                    aria-hidden
+                                    className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-90"
+                                />
+                            </summary>
+                            <p className="px-5 sm:px-6 pb-5 sm:pb-6 -mt-1 text-sm text-muted-foreground leading-relaxed">
+                                {f.a}
+                            </p>
+                        </details>
+                    ))}
+                </div>
+            </section>
+
+            {/* Final CTA band — close the page on conversion */}
+            <section className="mx-auto max-w-5xl px-4 sm:px-6 pt-16 sm:pt-20">
+                <div className="relative overflow-hidden border border-border bg-card px-6 py-14 sm:px-12 sm:py-20 text-center">
+                    <div
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 opacity-[0.06]"
+                        style={{
+                            backgroundImage:
+                                "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
+                            backgroundSize: "48px 48px",
+                        }}
+                    />
+                    <div className="relative">
+                        <span className="eyebrow text-muted-foreground">One email a week</span>
+                        <h2 className="mt-4 mx-auto max-w-2xl text-3xl sm:text-5xl font-bold tracking-tight leading-[1.05]">
+                            Start reading this Sunday.
+                        </h2>
+                        <p className="mt-4 mx-auto max-w-xl text-muted-foreground leading-relaxed">
+                            Join the list and get the next issue the moment it ships. Free forever,
+                            unsubscribe anytime.
+                        </p>
+                        <div className="mt-8 flex justify-center">
+                            <a href="#subscribe">
+                                <Button size="lg" className="gap-2">
+                                    Subscribe free <ArrowRight className="h-4 w-4" />
+                                </Button>
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <div className="mx-auto max-w-5xl px-4 sm:px-6">
