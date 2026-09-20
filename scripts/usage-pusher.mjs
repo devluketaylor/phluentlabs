@@ -105,6 +105,23 @@ const activityRows = ocQuery(
      ORDER BY ts DESC LIMIT 200`,
 );
 
+// Skill/tool usage rollups (map last_agent_id -> friendly name below).
+const skillRows = ocQuery(
+    `SELECT skill_key, skill_name, skill_source AS source, use_count,
+            last_agent_id, first_used_at_ms, last_used_at_ms
+     FROM skill_usage`,
+);
+
+// Sub-agent runs — LIGHTWEIGHT columns ONLY (never the huge task/result/payload
+// JSON blobs). Parse agent from child_session_key; outcome status/elapsed from
+// outcome_json. Cap to the most recent 200.
+const subagentRows = ocQuery(
+    `SELECT run_id, child_session_key, requester_session_key, task_name, model,
+            created_at, ended_at, outcome_json
+     FROM subagent_runs
+     ORDER BY created_at DESC LIMIT 200`,
+);
+
 const lastRun = new Map(
     ocQuery(
         `SELECT job_id, total_tokens FROM cron_run_logs c
@@ -199,7 +216,51 @@ try {
         `;
     }
     await sql`DELETE FROM usage_activity WHERE id NOT IN (SELECT id FROM usage_activity ORDER BY ts DESC LIMIT 200)`;
-    console.log(JSON.stringify({ jobs: perJob.length, days: perDay.length, status: statusRows.length, activity: activityRows.length }));
+
+    // Skill/tool usage leaderboard.
+    for (const r of skillRows) {
+        const lastAgent = agentFrom(r.last_agent_id ? `agent:${r.last_agent_id}:` : null);
+        const firstUsed = r.first_used_at_ms ? new Date(r.first_used_at_ms).toISOString() : null;
+        const lastUsed = r.last_used_at_ms ? new Date(r.last_used_at_ms).toISOString() : null;
+        await sql`
+            INSERT INTO skill_usage
+                (skill_key, skill_name, source, use_count, last_agent, first_used_at, last_used_at, updated_at)
+            VALUES (${r.skill_key}, ${r.skill_name || r.skill_key}, ${r.source || null},
+                    ${r.use_count ?? 0}, ${lastAgent}, ${firstUsed}, ${lastUsed}, now())
+            ON CONFLICT (skill_key) DO UPDATE SET
+                skill_name=EXCLUDED.skill_name, source=EXCLUDED.source, use_count=EXCLUDED.use_count,
+                last_agent=EXCLUDED.last_agent, first_used_at=EXCLUDED.first_used_at,
+                last_used_at=EXCLUDED.last_used_at, updated_at=now()
+        `;
+    }
+
+    // Sub-agent runs (lightweight). Agent from child (fall back to requester).
+    for (const r of subagentRows) {
+        let status = "running";
+        let elapsedMs = null;
+        if (r.outcome_json) {
+            try {
+                const o = JSON.parse(r.outcome_json);
+                if (o.status) status = o.status;
+                if (typeof o.elapsedMs === "number") elapsedMs = o.elapsedMs;
+            } catch { /* leave defaults */ }
+        }
+        const agent = agentFrom(r.child_session_key || r.requester_session_key);
+        const createdAt = r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString();
+        const endedAt = r.ended_at ? new Date(r.ended_at).toISOString() : null;
+        await sql`
+            INSERT INTO subagent_runs
+                (run_id, agent, label, model, status, created_at, ended_at, elapsed_ms)
+            VALUES (${r.run_id}, ${agent}, ${r.task_name || null}, ${r.model || null},
+                    ${status}, ${createdAt}, ${endedAt}, ${elapsedMs})
+            ON CONFLICT (run_id) DO UPDATE SET
+                agent=EXCLUDED.agent, label=EXCLUDED.label, model=EXCLUDED.model,
+                status=EXCLUDED.status, ended_at=EXCLUDED.ended_at, elapsed_ms=EXCLUDED.elapsed_ms
+        `;
+    }
+    await sql`DELETE FROM subagent_runs WHERE run_id NOT IN (SELECT run_id FROM subagent_runs ORDER BY created_at DESC LIMIT 200)`;
+
+    console.log(JSON.stringify({ jobs: perJob.length, days: perDay.length, status: statusRows.length, activity: activityRows.length, skills: skillRows.length, subagents: subagentRows.length }));
 } finally {
     await sql.end();
 }

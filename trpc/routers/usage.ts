@@ -2,7 +2,7 @@ import { ownerProcedure, router } from "@/trpc/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { desc, gte } from "drizzle-orm";
-import { usageSnapshots, usageDaily, jobStatus, usageActivity } from "@/db/schemas/usage-snapshots";
+import { usageSnapshots, usageDaily, jobStatus, usageActivity, skillUsage, subagentRuns } from "@/db/schemas/usage-snapshots";
 import { isIdeaLabOwner } from "@/lib/idea-lab";
 
 // Mission Control is owner-role AND email-gated to Luke.
@@ -102,5 +102,46 @@ export const usageRouter = router({
             const projectedMonthCost = dayOfMonth > 0 ? (mtdCost / dayOfMonth) * daysInMonth : 0;
 
             return { rows, mtdCost, projectedMonthCost };
+        }),
+
+    // Skill/tool usage leaderboard (most-used skills across the fleet).
+    skills: usageProcedure.query(async ({ ctx }) => {
+        const rows = await ctx.db
+            .select()
+            .from(skillUsage)
+            .orderBy(desc(skillUsage.useCount));
+        const totalUses = rows.reduce((a, r) => a + Number(r.useCount), 0);
+        return { rows, totalUses, distinctSkills: rows.length };
+    }),
+
+    // Sub-agent runs feed + rollup (spawned sub-agents, outcomes, runtime).
+    subagents: usageProcedure
+        .input(z.object({ limit: z.number().int().min(1).max(200).default(50) }).default({ limit: 50 }))
+        .query(async ({ input, ctx }) => {
+            const rows = await ctx.db
+                .select()
+                .from(subagentRuns)
+                .orderBy(desc(subagentRuns.createdAt))
+                .limit(input.limit);
+            const total = rows.length;
+            const ok = rows.filter((r) => r.status === "ok").length;
+            const errored = rows.filter((r) => r.status && r.status !== "ok" && r.status !== "running").length;
+            const running = rows.filter((r) => r.status === "running").length;
+            const finished = rows.filter((r) => r.elapsedMs != null);
+            const avgElapsedMs = finished.length
+                ? finished.reduce((a, r) => a + Number(r.elapsedMs), 0) / finished.length
+                : 0;
+            // Per-agent rollup.
+            const byAgentMap = new Map<string, { agent: string; runs: number; ok: number; errored: number }>();
+            for (const r of rows) {
+                const key = r.agent ?? "unknown";
+                const e = byAgentMap.get(key) ?? { agent: key, runs: 0, ok: 0, errored: 0 };
+                e.runs += 1;
+                if (r.status === "ok") e.ok += 1;
+                else if (r.status && r.status !== "running") e.errored += 1;
+                byAgentMap.set(key, e);
+            }
+            const byAgent = [...byAgentMap.values()].sort((a, b) => b.runs - a.runs);
+            return { rows, total, ok, errored, running, avgElapsedMs, byAgent };
         }),
 });

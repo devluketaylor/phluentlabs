@@ -90,3 +90,46 @@ export const usageActivity = pgTable(
     },
     (t) => [index("usage_activity_ts_idx").on(t.ts)],
 );
+
+// Skill/tool usage rollups for Mission Control ("where effort goes beyond cron").
+// One row per skill, upserted by the pusher from OpenClaw's `skill_usage` table.
+export const skillUsage = pgTable(
+    "skill_usage",
+    {
+        // Stable skill key (e.g. "discord", "skill-creator").
+        skillKey: text("skill_key").primaryKey(),
+        skillName: text("skill_name").notNull(),
+        // "bundled" | "workspace" | ...
+        source: text("source"),
+        useCount: integer("use_count").notNull().default(0),
+        // Last agent to use it, mapped to friendly name ("Tessie" | "Tiger").
+        lastAgent: text("last_agent"),
+        firstUsedAt: timestamp("first_used_at"),
+        lastUsedAt: timestamp("last_used_at"),
+        updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    },
+    (t) => [index("skill_usage_count_idx").on(t.useCount)],
+);
+
+// Sub-agent run rollups for Mission Control (spawned sub-agents + outcomes).
+// One row per sub-agent run, upserted by the pusher; capped/pruned to recent.
+// Deliberately stores ONLY lightweight columns — never the huge task/result/
+// payload JSON blobs from OpenClaw's subagent_runs.
+export const subagentRuns = pgTable(
+    "subagent_runs",
+    {
+        runId: text("run_id").primaryKey(),
+        // Friendly agent name that spawned it ("Tessie" | "Tiger").
+        agent: text("agent"),
+        // Short task label (task_name) if present.
+        label: text("label"),
+        model: text("model"),
+        // "ok" | "error" | "running" | ...
+        status: text("status"),
+        createdAt: timestamp("created_at").notNull(),
+        endedAt: timestamp("ended_at"),
+        // Wall-clock elapsed ms (from outcome), if finished.
+        elapsedMs: bigint("elapsed_ms", { mode: "number" }),
+    },
+    (t) => [index("subagent_runs_created_idx").on(t.createdAt)],
+);

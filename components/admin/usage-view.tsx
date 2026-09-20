@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/trpc/client";
 import { BarChart, LineChart } from "@/components/admin/charts";
-import { Coins, Cpu, Activity, Flame, CircleCheck, CircleAlert, Clock, Bot } from "lucide-react";
+import { Coins, Cpu, Activity, Flame, CircleCheck, CircleAlert, Clock, Bot, Wrench, GitBranch } from "lucide-react";
 
 function fmtNum(n: number) {
     if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
@@ -36,6 +36,8 @@ export function UsageView() {
     const health = trpc.usage.health.useQuery(undefined, { refetchOnWindowFocus: false, refetchInterval: 60000 });
     const activity = trpc.usage.activity.useQuery({ limit: 60 }, { refetchOnWindowFocus: false, refetchInterval: 60000 });
     const daily = trpc.usage.daily.useQuery({ days: 30 }, { refetchOnWindowFocus: false });
+    const skills = trpc.usage.skills.useQuery(undefined, { refetchOnWindowFocus: false, refetchInterval: 60000 });
+    const subagents = trpc.usage.subagents.useQuery({ limit: 50 }, { refetchOnWindowFocus: false, refetchInterval: 60000 });
 
     const s = summary.data;
     const h = health.data;
@@ -69,6 +71,15 @@ export function UsageView() {
     const fRuns = jobs.reduce((a, j) => a + Number(j.runs), 0);
 
     const costBars = jobs.filter((j) => Number(j.costUsd) > 0).map((j) => ({ label: j.jobName, value: Number(j.costUsd) }));
+
+    // Skill/tool leaderboard (top 8) as bars.
+    const skillBars = (skills.data?.rows ?? [])
+        .filter((r) => (agent === "all" || (r.lastAgent ?? "unknown") === agent) && Number(r.useCount) > 0)
+        .slice(0, 8)
+        .map((r) => ({ label: r.skillName, value: Number(r.useCount) }));
+
+    // Sub-agent runs, agent-filtered.
+    const saRows = (subagents.data?.rows ?? []).filter((r) => agent === "all" || (r.agent ?? "unknown") === agent);
 
     // Daily cost line (all agents).
     const byDay = new Map<string, number>();
@@ -158,6 +169,83 @@ export function UsageView() {
                         <CardContent><LineChart data={costLine} valueSuffix=" USD" ariaLabel="Daily cost" /></CardContent>
                     </Card>
                 )}
+            </div>
+
+            {/* Skill/tool usage + sub-agent runs */}
+            <div className="grid gap-6 lg:grid-cols-2">
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <Wrench className="h-4 w-4" /> Skill / tool usage
+                            {skills.data && (
+                                <span className="ml-auto text-xs font-normal text-muted-foreground">
+                                    {fmtNum(skills.data.totalUses)} uses · {skills.data.distinctSkills} skills
+                                </span>
+                            )}
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {skillBars.length > 0 ? (
+                            <BarChart data={skillBars} ariaLabel="Skill usage" />
+                        ) : (
+                            <p className="py-8 text-center text-sm text-muted-foreground">No skill usage recorded yet.</p>
+                        )}
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <GitBranch className="h-4 w-4" /> Sub-agent runs
+                            {subagents.data && (
+                                <span className="ml-auto text-xs font-normal text-muted-foreground">
+                                    {subagents.data.ok} ok · {subagents.data.errored} err
+                                    {subagents.data.avgElapsedMs > 0 && <> · avg {Math.round(subagents.data.avgElapsedMs / 1000)}s</>}
+                                </span>
+                            )}
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="max-h-72 overflow-y-auto">
+                            {saRows.length > 0 ? (
+                                <table className="w-full text-sm">
+                                    <thead className="sticky top-0 bg-card">
+                                        <tr className="border-b border-border text-left text-muted-foreground">
+                                            <th className="py-2 pr-3 font-medium">When</th>
+                                            <th className="py-2 pr-3 font-medium">Task</th>
+                                            <th className="py-2 pr-3 font-medium">Agent</th>
+                                            <th className="py-2 pr-3 font-medium">Status</th>
+                                            <th className="py-2 font-medium text-right">Runtime</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {saRows.map((r) => {
+                                            const ok = r.status === "ok";
+                                            const running = r.status === "running";
+                                            return (
+                                                <tr key={r.runId} className="border-b border-border/50">
+                                                    <td className="py-2 pr-3 text-muted-foreground">{fmtWhen(r.createdAt)}</td>
+                                                    <td className="py-2 pr-3 truncate max-w-[10rem]">{r.label ?? "—"}</td>
+                                                    <td className="py-2 pr-3 text-muted-foreground">{r.agent ?? "—"}</td>
+                                                    <td className="py-2 pr-3">
+                                                        <span className={`inline-flex items-center gap-1 ${ok || running ? "" : "text-destructive"}`}>
+                                                            <span className={`h-2 w-2 rounded-full ${ok ? "bg-foreground" : running ? "bg-muted-foreground" : "bg-destructive"}`} />
+                                                            {r.status ?? "—"}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-2 text-right text-muted-foreground">
+                                                        {r.elapsedMs != null ? `${Math.round(Number(r.elapsedMs) / 1000)}s` : "—"}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <p className="py-8 text-center text-sm text-muted-foreground">No sub-agent runs recorded yet.</p>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             {/* Activity feed */}

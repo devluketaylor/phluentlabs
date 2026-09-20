@@ -134,6 +134,13 @@
       "when": 1789874409487,
       "tag": "0018_military_the_twelve",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789880664940,
+      "tag": "0019_new_reaper",
+      "breakpoints": true
     }
   ]
 }
