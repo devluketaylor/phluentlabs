@@ -39,24 +39,30 @@ type Featured = {
 
 type HomeProps = { featured: Featured; issueCount: number };
 
-// What subscribers get — value-prop cards under the hero.
+// What subscribers get — numbered value cards under the hero.
 const VALUE_PROPS = [
     {
+        index: "01",
         icon: Code2,
-        title: "For developers",
-        body: "Practical notes from building on the modern web — frameworks, tooling, and the patterns actually worth your time.",
+        title: "From real builds",
+        body: "Every issue starts in the editor, not the echo chamber — notes, patterns, and tools pulled from projects that actually shipped.",
     },
     {
+        index: "02",
         icon: Clock,
-        title: "Every Sunday",
-        body: "One focused issue a week. No spam, no filler — just what's worth knowing, delivered on a predictable cadence.",
+        title: "One Sunday email",
+        body: "A single focused read each week. Five minutes, no drip campaigns, no filler — just the issue.",
     },
     {
+        index: "03",
         icon: Zap,
-        title: "Signal over noise",
-        body: "What I'm noticing while shipping real projects — curated so you skip the hype and keep the substance.",
+        title: "Zero hype",
+        body: "Frameworks, tooling, and AI shifts — filtered hard. If it wouldn't survive contact with a real codebase, it doesn't make the cut.",
     },
 ];
+
+// The promises band under the hero — honest, mono, load-bearing.
+const PROMISES = ["Every Sunday", "~5 min read", "Free forever", "Unsubscribe anytime"];
 
 function formatDate(iso: string | null) {
     if (!iso) return "";
@@ -161,7 +167,7 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
 
     return (
         <main>
-            {/* Hero — full-bleed, monochrome grid texture */}
+            {/* Hero — editorial, left-aligned, monochrome grid texture */}
             <section className="relative overflow-hidden border-b border-border">
                 {/* Subtle monochrome grid backdrop */}
                 <div
@@ -173,44 +179,68 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                         backgroundSize: "48px 48px",
                     }}
                 />
-                <div className="relative mx-auto max-w-4xl px-4 sm:px-6 py-20 sm:py-28 text-center space-y-6">
-                    <div className="eyebrow inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-muted-foreground">
-                        <Mail className="h-3 w-3" /> A free weekly newsletter
+                <div className="relative mx-auto max-w-5xl px-4 sm:px-6 pt-20 sm:pt-28 pb-14 sm:pb-20">
+                    <div className="eyebrow inline-flex items-center gap-2 border border-border px-3 py-1 text-muted-foreground">
+                        <Mail className="h-3 w-3" /> PhluentLabs · A weekly newsletter for developers
                     </div>
-                    <h1 className="mx-auto max-w-3xl text-4xl sm:text-6xl font-bold tracking-tight leading-[1.05]">
-                        What I&apos;m noticing while building the web
+                    <h1 className="mt-6 max-w-3xl text-5xl sm:text-7xl font-bold tracking-tight leading-[0.98]">
+                        The web, as it&apos;s actually built.
                     </h1>
-                    <p className="mx-auto max-w-xl text-muted-foreground text-lg sm:text-xl leading-relaxed">
-                        Practical dev insight, curated every Sunday and delivered straight to your
-                        inbox. By Luke Taylor.
+                    <p className="mt-6 max-w-xl text-muted-foreground text-lg sm:text-xl leading-relaxed">
+                        Field notes from real projects — the tools, patterns, and shifts worth
+                        your attention, minus the hype. Written by Luke Taylor, delivered every
+                        Sunday.
                     </p>
-                    <div className="flex flex-col items-center gap-3 pt-2">
+                    <div className="mt-8 flex flex-wrap items-center gap-4">
                         <a href="#subscribe">
                             <Button size="lg" className="gap-2">
                                 Subscribe free <ArrowRight className="h-4 w-4" />
                             </Button>
                         </a>
-                        <p className="text-sm text-muted-foreground">
-                            {n <= 0 ? (
-                                "Be one of the first developers to subscribe."
-                            ) : (
-                                <>
-                                    Join <span className="font-semibold text-foreground">{countLabel}</span>{" "}
-                                    developer{n === 1 ? "" : "s"} already subscribed.
-                                </>
-                            )}
-                        </p>
+                        <a
+                            href="/issues"
+                            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+                        >
+                            Browse the archive &rarr;
+                        </a>
+                    </div>
+                    <p className="mt-4 text-sm text-muted-foreground">
+                        {n <= 0 ? (
+                            "Be one of the first developers on the list."
+                        ) : (
+                            <>
+                                Read alongside{" "}
+                                <span className="font-semibold text-foreground">{countLabel}</span>{" "}
+                                other developer{n === 1 ? "" : "s"}.
+                            </>
+                        )}
+                    </p>
+                </div>
+                {/* Promise band — hairline strip along the hero's base */}
+                <div className="relative border-t border-border">
+                    <div className="mx-auto grid max-w-5xl grid-cols-2 sm:grid-cols-4 px-4 sm:px-6">
+                        {PROMISES.map((p, i) => (
+                            <div
+                                key={p}
+                                className={`eyebrow py-4 text-muted-foreground ${i > 0 ? "sm:border-l sm:border-border sm:pl-6" : ""}`}
+                            >
+                                {p}
+                            </div>
+                        ))}
                     </div>
                 </div>
             </section>
 
-            {/* What you'll get — value props */}
+            {/* What you'll get — numbered value cards */}
             <section className="mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-20">
-                <h2 className="eyebrow mb-8 text-center text-muted-foreground">What you&apos;ll get</h2>
+                <h2 className="eyebrow mb-8 text-muted-foreground">What you&apos;ll get</h2>
                 <div className="grid gap-px border border-border bg-border sm:grid-cols-3">
                     {VALUE_PROPS.map((v) => (
                         <div key={v.title} className="bg-card p-6 sm:p-8">
-                            <v.icon className="h-6 w-6" />
+                            <div className="flex items-center justify-between">
+                                <v.icon className="h-6 w-6" />
+                                <span className="eyebrow text-muted-foreground">{v.index}</span>
+                            </div>
                             <h3 className="mt-4 text-lg font-semibold">{v.title}</h3>
                             <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{v.body}</p>
                         </div>
@@ -244,7 +274,10 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
             {/* Subscribe form */}
             <section id="subscribe" className="mx-auto max-w-2xl px-4 sm:px-6">
             <div className="border border-border bg-card p-6 sm:p-8">
-                <h2 className="eyebrow mb-4 text-muted-foreground">Subscribe for free</h2>
+                <h2 className="text-2xl font-bold tracking-tight">Get the next issue</h2>
+                <p className="mb-5 mt-1 text-sm text-muted-foreground">
+                    Free, every Sunday. Unsubscribe anytime — no hard feelings.
+                </p>
                 <FormProvider {...methods}>
                     <Form {...methods}>
                         <SubscribeForm<SubscribeValues>

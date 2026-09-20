@@ -14,10 +14,10 @@ export const revalidate = 3600;
 // keyword-rich for its role as the primary entry point.
 export const metadata: Metadata = {
     title: {
-        absolute: "PhluentLabs — a weekly newsletter for developers",
+        absolute: "PhluentLabs — the web, as it's actually built",
     },
     description:
-        "What I'm noticing while building the web — straight to your inbox. A free weekly newsletter for developers, by Luke Taylor.",
+        "Field notes from real projects — tools, patterns, and shifts worth your attention, minus the hype. A free Sunday newsletter for developers by Luke Taylor.",
     alternates: {
         canonical: APP_URL,
         types: {
@@ -26,17 +26,17 @@ export const metadata: Metadata = {
     },
     openGraph: {
         type: "website",
-        title: "PhluentLabs — a weekly newsletter for developers",
+        title: "PhluentLabs — the web, as it's actually built",
         description:
-            "What I'm noticing while building the web — straight to your inbox. A free weekly newsletter for developers.",
+            "Field notes from real projects — tools, patterns, and shifts worth your attention, minus the hype. Free, every Sunday.",
         url: APP_URL,
         siteName: "PhluentLabs",
     },
     twitter: {
         card: "summary",
-        title: "PhluentLabs — a weekly newsletter for developers",
+        title: "PhluentLabs — the web, as it's actually built",
         description:
-            "What I'm noticing while building the web — straight to your inbox. A free weekly newsletter for developers.",
+            "Field notes from real projects — tools, patterns, and shifts worth your attention, minus the hype. Free, every Sunday.",
         creator: "@luketaylordev",
     },
 };
@@ -87,7 +87,7 @@ export default async function HomePage() {
         url: APP_URL,
         name: "PhluentLabs",
         description:
-            "What I'm noticing while building the web — a weekly newsletter for developers.",
+            "Field notes from real projects — a free Sunday newsletter for developers.",
         inLanguage: "en",
         publisher: {
             "@type": "Organization",
