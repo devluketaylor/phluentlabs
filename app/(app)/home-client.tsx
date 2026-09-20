@@ -19,7 +19,6 @@ import {
     FormLabel,
     FormMessage,
 } from "@/components/ui/form";
-import { Separator } from "@/components/ui/separator";
 import { NewsletterList } from "@/components/newsletter-list";
 
 const subscribeSchema = z.object({
@@ -204,8 +203,15 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
         router.push("/confirm");
     };
 
+    // CLS guard: the count is fetched client-side, so treat "still loading"
+    // distinctly from "confirmed zero". While loading we render neutral,
+    // stable copy (no "be one of the first" flash that would then flip to a
+    // real number and shift layout); the empty-state copy only shows once the
+    // query has actually resolved to 0.
+    const countReady = subscriberCount.isSuccess;
     const n = subscriberCount.data?.count ?? 0;
     const countLabel = n >= 50 ? `${Math.floor(n / 10) * 10}+` : `${n}`;
+    const isEmpty = countReady && n <= 0;
 
     // Rotate the testimonial slot gently client-side so the credibility band
     // feels alive without a backend. Deterministic first paint (index 0) then
@@ -280,8 +286,12 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                             Browse the archive &rarr;
                         </a>
                     </div>
-                    <p className="mt-4 text-sm text-muted-foreground">
-                        {n <= 0 ? (
+                    {/* Fixed-height line reserves space so the async count can't
+                        push the layout down when it resolves (no CLS). */}
+                    <p className="mt-4 min-h-5 text-sm text-muted-foreground">
+                        {!countReady ? (
+                            "A free weekly read for developers."
+                        ) : isEmpty ? (
                             "Be one of the first developers on the list."
                         ) : (
                             <>
@@ -308,7 +318,7 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
             </section>
 
             {/* What you'll get — numbered value cards */}
-            <section className="mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-20">
+            <section className="mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-24">
                 <h2 className="eyebrow mb-8 text-muted-foreground">What you&apos;ll get</h2>
                 <div className="grid gap-px border border-border bg-border sm:grid-cols-3">
                     {VALUE_PROPS.map((v) => (
@@ -326,15 +336,19 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
 
             {/* Credibility band — social proof + author intro */}
             <section className="border-y border-border bg-card">
-                <div className="mx-auto max-w-5xl px-4 sm:px-6 py-12 sm:py-16">
+                <div className="mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-24">
                     {/* Metric row */}
                     <div className="grid grid-cols-3 gap-px border border-border bg-border">
                         <div className="bg-card p-5 sm:p-6">
                             <div className="text-3xl sm:text-4xl font-bold tracking-tight">
-                                {n <= 0 ? "New" : countLabel}
+                                {!countReady ? "\u2014" : isEmpty ? "New" : countLabel}
                             </div>
                             <div className="eyebrow mt-1 text-muted-foreground">
-                                {n <= 0 ? "Just launched" : `Developer${n === 1 ? "" : "s"} reading`}
+                                {!countReady
+                                    ? "Developers reading"
+                                    : isEmpty
+                                      ? "Just launched"
+                                      : `Developer${n === 1 ? "" : "s"} reading`}
                             </div>
                         </div>
                         <div className="bg-card p-5 sm:p-6">
@@ -390,7 +404,7 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
 
             {/* Featured latest issue */}
             {featured && (
-                <section className="mx-auto max-w-5xl px-4 sm:px-6 pb-16 sm:pb-20">
+                <section className="mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-24">
                     <h2 className="eyebrow mb-6 text-muted-foreground">Latest issue</h2>
                     <a
                         href={`/issues/${featured.slug}`}
@@ -412,7 +426,7 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
             )}
 
             {/* Subscribe form */}
-            <section id="subscribe" className="mx-auto max-w-5xl px-4 sm:px-6">
+            <section id="subscribe" className="scroll-mt-20 mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-24">
             <div className="grid gap-px border border-border bg-border md:grid-cols-2">
             <div className="flex flex-col justify-center bg-card p-6 sm:p-10">
                 <span className="eyebrow text-muted-foreground">Join the list</span>
@@ -421,7 +435,7 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                     Free, every Sunday. One focused read — no drip campaigns, no spam.
                     Unsubscribe anytime, no hard feelings.
                 </p>
-                {n > 0 && (
+                {countReady && !isEmpty && (
                     <p className="mt-4 text-sm text-muted-foreground">
                         Trusted by{" "}
                         <span className="font-semibold text-foreground">{countLabel}</span>{" "}
@@ -470,7 +484,7 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
             </section>
 
             {/* FAQ — native <details> accordion, monochrome */}
-            <section className="mx-auto max-w-5xl px-4 sm:px-6 pt-16 sm:pt-20">
+            <section className="mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-24">
                 <h2 className="eyebrow mb-8 text-muted-foreground">Frequently asked</h2>
                 <div className="border border-border">
                     {FAQS.map((f, i) => (
@@ -494,7 +508,7 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
             </section>
 
             {/* Final CTA band — close the page on conversion */}
-            <section className="mx-auto max-w-5xl px-4 sm:px-6 pt-16 sm:pt-20">
+            <section className="mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-24">
                 <div className="relative overflow-hidden border border-border bg-card px-6 py-14 sm:px-12 sm:py-20 text-center">
                     <div
                         aria-hidden
@@ -525,12 +539,8 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                 </div>
             </section>
 
-            <div className="mx-auto max-w-5xl px-4 sm:px-6">
-                <Separator className="my-12" />
-            </div>
-
             {/* Past issues */}
-            <section className="mx-auto max-w-5xl px-4 sm:px-6 pb-16">
+            <section className="border-t border-border mx-auto max-w-5xl px-4 sm:px-6 py-16 sm:py-24">
                 <div className="flex items-baseline justify-between mb-6">
                     <h2 className="eyebrow text-muted-foreground">Past issues</h2>
                     <a
