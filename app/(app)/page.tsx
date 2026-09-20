@@ -66,6 +66,16 @@ async function getRecentIssues() {
 
 export default async function HomePage() {
     const recent = await getRecentIssues();
+    // The most recent published issue gets a featured showcase on the homepage.
+    const featured = recent[0] ?? null;
+    const featuredData = featured
+        ? {
+              slug: featured.slug ?? featured.id,
+              subject: featured.subject,
+              preheader: featured.preheader ?? null,
+              date: (featured.sentAt ?? featured.createdAt)?.toISOString() ?? null,
+          }
+        : null;
 
     // Blog with an embedded ItemList of the latest issues. This helps search
     // engines understand the homepage as the hub of a periodical and surface
@@ -117,7 +127,7 @@ export default async function HomePage() {
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
             />
-            <HomeClient />
+            <HomeClient featured={featuredData} issueCount={recent.length} />
         </>
     );
 }
