@@ -179,6 +179,23 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                         backgroundSize: "48px 48px",
                     }}
                 />
+                {/* Radial vignette — fades the grid toward the edges for depth */}
+                <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                        background:
+                            "radial-gradient(120% 80% at 20% 0%, transparent 40%, var(--background) 100%)",
+                    }}
+                />
+                {/* Hairline crosshair accent — top-right corner framing detail */}
+                <div
+                    aria-hidden
+                    className="pointer-events-none absolute right-6 top-6 hidden h-16 w-16 sm:block"
+                >
+                    <div className="absolute right-0 top-0 h-full w-px bg-border" />
+                    <div className="absolute right-0 top-0 h-px w-full bg-border" />
+                </div>
                 <div className="relative mx-auto max-w-5xl px-4 sm:px-6 pt-20 sm:pt-28 pb-14 sm:pb-20">
                     <div className="eyebrow inline-flex items-center gap-2 border border-border px-3 py-1 text-muted-foreground">
                         <Mail className="h-3 w-3" /> PhluentLabs · A weekly newsletter for developers
@@ -186,10 +203,10 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                     <h1 className="mt-6 max-w-3xl text-5xl sm:text-7xl font-bold tracking-tight leading-[0.98]">
                         The web, as it&apos;s actually built.
                     </h1>
-                    <p className="mt-6 max-w-xl text-muted-foreground text-lg sm:text-xl leading-relaxed">
-                        Field notes from real projects — the tools, patterns, and shifts worth
-                        your attention, minus the hype. Written by Luke Taylor, delivered every
-                        Sunday.
+                    <p className="mt-6 max-w-2xl text-muted-foreground text-lg sm:text-xl leading-relaxed">
+                        A free Sunday newsletter for working developers. Field notes from real
+                        projects — the tools, patterns, and shifts worth your attention, with the
+                        hype filtered out. Written by Luke Taylor, one issue a week.
                     </p>
                     <div className="mt-8 flex flex-wrap items-center gap-4">
                         <a href="#subscribe">
@@ -250,7 +267,7 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
 
             {/* Featured latest issue */}
             {featured && (
-                <section className="mx-auto max-w-4xl px-4 sm:px-6 pb-16 sm:pb-20">
+                <section className="mx-auto max-w-5xl px-4 sm:px-6 pb-16 sm:pb-20">
                     <h2 className="eyebrow mb-6 text-muted-foreground">Latest issue</h2>
                     <a
                         href={`/issues/${featured.slug}`}
@@ -272,12 +289,24 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
             )}
 
             {/* Subscribe form */}
-            <section id="subscribe" className="mx-auto max-w-2xl px-4 sm:px-6">
-            <div className="border border-border bg-card p-6 sm:p-8">
-                <h2 className="text-2xl font-bold tracking-tight">Get the next issue</h2>
-                <p className="mb-5 mt-1 text-sm text-muted-foreground">
-                    Free, every Sunday. Unsubscribe anytime — no hard feelings.
+            <section id="subscribe" className="mx-auto max-w-5xl px-4 sm:px-6">
+            <div className="grid gap-px border border-border bg-border md:grid-cols-2">
+            <div className="flex flex-col justify-center bg-card p-6 sm:p-10">
+                <span className="eyebrow text-muted-foreground">Join the list</span>
+                <h2 className="mt-3 text-3xl font-bold tracking-tight leading-tight">Get the next issue in your inbox.</h2>
+                <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
+                    Free, every Sunday. One focused read — no drip campaigns, no spam.
+                    Unsubscribe anytime, no hard feelings.
                 </p>
+                {n > 0 && (
+                    <p className="mt-4 text-sm text-muted-foreground">
+                        Trusted by{" "}
+                        <span className="font-semibold text-foreground">{countLabel}</span>{" "}
+                        developer{n === 1 ? "" : "s"}.
+                    </p>
+                )}
+            </div>
+            <div className="bg-card p-6 sm:p-10">
                 <FormProvider {...methods}>
                     <Form {...methods}>
                         <SubscribeForm<SubscribeValues>
@@ -314,14 +343,15 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                     </Form>
                 </FormProvider>
             </div>
+            </div>
             </section>
 
-            <div className="mx-auto max-w-2xl px-4 sm:px-6">
+            <div className="mx-auto max-w-5xl px-4 sm:px-6">
                 <Separator className="my-12" />
             </div>
 
             {/* Past issues */}
-            <section className="mx-auto max-w-2xl px-4 sm:px-6 pb-16">
+            <section className="mx-auto max-w-5xl px-4 sm:px-6 pb-16">
                 <div className="flex items-baseline justify-between mb-6">
                     <h2 className="eyebrow text-muted-foreground">Past issues</h2>
                     <a
