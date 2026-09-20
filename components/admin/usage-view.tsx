@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/trpc/client";
 import { BarChart, LineChart } from "@/components/admin/charts";
-import { Coins, Cpu, Activity, Flame, CircleCheck, CircleAlert, Clock, Bot, Wrench, GitBranch } from "lucide-react";
+import { Coins, Cpu, Activity, Flame, CircleCheck, CircleAlert, Clock, Bot, Wrench, GitBranch, Radar, Gauge, TrendingUp } from "lucide-react";
+
+const BUDGET_KEY = "mc.monthlyBudget";
 
 function fmtNum(n: number) {
     if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
@@ -32,6 +34,29 @@ type AgentFilter = "all" | "Tessie" | "Tiger";
 
 export function UsageView() {
     const [agent, setAgent] = useState<AgentFilter>("all");
+    // Configurable monthly-budget line (persisted locally — a personal ops knob,
+    // not shared state). 0 / unset = no budget.
+    const [budget, setBudget] = useState<number>(0);
+    const [budgetInput, setBudgetInput] = useState<string>("");
+    useEffect(() => {
+        const raw = typeof window !== "undefined" ? window.localStorage.getItem(BUDGET_KEY) : null;
+        const n = raw ? Number(raw) : 0;
+        if (Number.isFinite(n) && n > 0) {
+            setBudget(n);
+            setBudgetInput(String(n));
+        }
+    }, []);
+    const saveBudget = (v: string) => {
+        setBudgetInput(v);
+        const n = Number(v);
+        const clean = Number.isFinite(n) && n > 0 ? n : 0;
+        setBudget(clean);
+        if (typeof window !== "undefined") {
+            if (clean > 0) window.localStorage.setItem(BUDGET_KEY, String(clean));
+            else window.localStorage.removeItem(BUDGET_KEY);
+        }
+    };
+
     const summary = trpc.usage.summary.useQuery(undefined, { refetchOnWindowFocus: false, refetchInterval: 60000 });
     const health = trpc.usage.health.useQuery(undefined, { refetchOnWindowFocus: false, refetchInterval: 60000 });
     const activity = trpc.usage.activity.useQuery({ limit: 60 }, { refetchOnWindowFocus: false, refetchInterval: 60000 });
@@ -72,6 +97,18 @@ export function UsageView() {
 
     const costBars = jobs.filter((j) => Number(j.costUsd) > 0).map((j) => ({ label: j.jobName, value: Number(j.costUsd) }));
 
+    // Cost-per-run leaderboard — priciest automations by average cost/run.
+    const costPerRun = jobs
+        .map((j) => ({ jobName: j.jobName, agent: j.agent ?? "—", runs: Number(j.runs), cpr: Number(j.runs) > 0 ? Number(j.costUsd) / Number(j.runs) : 0 }))
+        .filter((j) => j.cpr > 0)
+        .sort((a, b) => b.cpr - a.cpr)
+        .slice(0, 8);
+
+    // Budget math.
+    const projected = daily.data?.projectedMonthCost ?? 0;
+    const overBudget = budget > 0 && projected > budget;
+    const budgetPct = budget > 0 ? Math.min(999, Math.round((projected / budget) * 100)) : 0;
+
     // Skill/tool leaderboard (top 8) as bars.
     const skillBars = (skills.data?.rows ?? [])
         .filter((r) => (agent === "all" || (r.lastAgent ?? "unknown") === agent) && Number(r.useCount) > 0)
@@ -90,10 +127,27 @@ export function UsageView() {
     }
     const costLine = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([day, value]) => ({ label: day.slice(5), value }));
 
+    const anyLoading = summary.isFetching || health.isFetching || activity.isFetching || daily.isFetching;
+
     return (
         <div className="space-y-6">
+            {/* Control-room command bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border border-border bg-card px-4 py-3">
+                <div className="flex items-center gap-2">
+                    <Radar className="h-4 w-4" />
+                    <span className="eyebrow">Fleet status</span>
+                    <span className={`ml-1 h-2 w-2 rounded-full ${(h?.errors24h ?? 0) > 0 ? "bg-destructive" : "bg-foreground"} ${anyLoading ? "animate-pulse" : ""}`} title={anyLoading ? "Refreshing…" : "Live"} />
+                    <span className="text-xs text-muted-foreground">{anyLoading ? "Refreshing…" : "Live · auto-refresh 60s"}</span>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>{h?.okJobs ?? 0}/{h?.totalJobs ?? 0} healthy</span>
+                    <span className={(h?.errors24h ?? 0) > 0 ? "text-destructive" : ""}>{h?.errors24h ?? 0} err/24h</span>
+                    <span>updated {fmtWhen(s.lastUpdated)}</span>
+                </div>
+            </div>
+
             {/* Fleet status header */}
-            <div className="grid gap-4 sm:grid-cols-4">
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
                 <Tile icon={CircleCheck} label="Jobs healthy" value={`${h?.okJobs ?? 0}/${h?.totalJobs ?? 0}`} />
                 <Tile icon={CircleAlert} label="Errors (24h)" value={String(h?.errors24h ?? 0)} alert={(h?.errors24h ?? 0) > 0} />
                 <Tile icon={Activity} label="Runs (24h)" value={String(h?.runs24h ?? 0)} />
@@ -122,11 +176,43 @@ export function UsageView() {
             </div>
 
             {/* Spend + tokens cards */}
-            <div className="grid gap-4 sm:grid-cols-4">
+            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
                 <Tile icon={Coins} label="Est. cost (all-time)" value={fmtUsd(fCost)} accent />
                 <Tile icon={Coins} label="This month" value={fmtUsd(daily.data?.mtdCost ?? 0)} />
-                <Tile icon={Flame} label="Projected month" value={fmtUsd(daily.data?.projectedMonthCost ?? 0)} sub="at current run-rate" />
+                <Tile icon={Flame} label="Projected month" value={fmtUsd(projected)} sub={budget > 0 ? `${budgetPct}% of ${fmtUsd(budget)} budget` : "at current run-rate"} alert={overBudget} />
                 <Tile icon={Cpu} label="Tokens" value={fmtNum(fTokens)} sub={`${fmtNum(fRuns)} runs`} />
+            </div>
+
+            {/* Budget control + alert */}
+            <div className={`flex flex-wrap items-center justify-between gap-3 border px-4 py-3 ${overBudget ? "border-destructive" : "border-border"}`}>
+                <div className="flex items-center gap-2">
+                    <Gauge className={`h-4 w-4 ${overBudget ? "text-destructive" : "text-muted-foreground"}`} />
+                    <label htmlFor="mc-budget" className="text-sm">Monthly budget</label>
+                    <div className="flex items-center border border-border">
+                        <span className="px-2 text-sm text-muted-foreground">$</span>
+                        <input
+                            id="mc-budget"
+                            type="number"
+                            min={0}
+                            inputMode="numeric"
+                            placeholder="none"
+                            value={budgetInput}
+                            onChange={(e) => saveBudget(e.target.value)}
+                            className="w-24 bg-transparent px-2 py-1 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        />
+                    </div>
+                </div>
+                <div className="text-xs">
+                    {budget > 0 ? (
+                        overBudget ? (
+                            <span className="inline-flex items-center gap-1 text-destructive"><CircleAlert className="h-3.5 w-3.5" /> Projected {fmtUsd(projected)} exceeds budget by {fmtUsd(projected - budget)}</span>
+                        ) : (
+                            <span className="inline-flex items-center gap-1 text-muted-foreground"><CircleCheck className="h-3.5 w-3.5" /> On track — {fmtUsd(budget - projected)} headroom ({budgetPct}%)</span>
+                        )
+                    ) : (
+                        <span className="text-muted-foreground">Set a budget to get a projection alert.</span>
+                    )}
+                </div>
             </div>
 
             {/* Health tiles per job */}
@@ -166,10 +252,47 @@ export function UsageView() {
                 {costLine.length > 1 && (
                     <Card>
                         <CardHeader><CardTitle className="text-base">Daily cost (30d)</CardTitle></CardHeader>
-                        <CardContent><LineChart data={costLine} valueSuffix=" USD" ariaLabel="Daily cost" /></CardContent>
+                        <CardContent>
+                            <LineChart
+                                data={costLine}
+                                valueSuffix=" USD"
+                                ariaLabel="Daily cost"
+                                refLine={budget > 0 ? { value: budget / 30, label: "Daily budget pace" } : undefined}
+                            />
+                            {budget > 0 && <p className="mt-1 text-[10px] text-muted-foreground">Dashed line = daily budget pace ({fmtUsd(budget / 30)}/day).</p>}
+                        </CardContent>
                     </Card>
                 )}
             </div>
+
+            {/* Cost-per-run leaderboard */}
+            {costPerRun.length > 0 && (
+                <Card>
+                    <CardHeader><CardTitle className="flex items-center gap-2 text-base"><TrendingUp className="h-4 w-4" /> Cost per run (priciest automations)</CardTitle></CardHeader>
+                    <CardContent>
+                        <div className="space-y-1">
+                            {(() => {
+                                const maxCpr = Math.max(...costPerRun.map((j) => j.cpr));
+                                return costPerRun.map((j, i) => (
+                                    <div key={j.jobName} className="flex items-center gap-3">
+                                        <span className="eyebrow w-6 shrink-0 text-right text-muted-foreground">{i + 1}</span>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="truncate text-sm">{j.jobName}</span>
+                                                <span className="shrink-0 text-sm font-medium tabular-nums">${j.cpr.toFixed(2)}/run</span>
+                                            </div>
+                                            <div className="mt-1 h-1.5 w-full bg-muted">
+                                                <div className="h-full bg-foreground" style={{ width: `${maxCpr > 0 ? (j.cpr / maxCpr) * 100 : 0}%` }} />
+                                            </div>
+                                        </div>
+                                        <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">{fmtNum(j.runs)} runs</span>
+                                    </div>
+                                ));
+                            })()}
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Skill/tool usage + sub-agent runs */}
             <div className="grid gap-6 lg:grid-cols-2">

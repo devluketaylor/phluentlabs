@@ -22,11 +22,14 @@ export function LineChart({
     height = 160,
     valueSuffix = "",
     ariaLabel,
+    refLine,
 }: {
     data: Point[];
     height?: number;
     valueSuffix?: string;
     ariaLabel?: string;
+    /** Optional horizontal reference line (e.g. a budget threshold). */
+    refLine?: { value: number; label?: string };
 }) {
     const width = 640; // viewBox width; SVG scales to container
     const padX = 8;
@@ -42,7 +45,7 @@ export function LineChart({
         );
     }
 
-    const max = Math.max(1, ...data.map((d) => d.value));
+    const max = Math.max(1, ...data.map((d) => d.value), refLine?.value ?? 0);
     const n = data.length;
     const stepX = n > 1 ? innerW / (n - 1) : 0;
 
@@ -77,6 +80,24 @@ export function LineChart({
                     </linearGradient>
                 </defs>
                 <path d={areaPath} fill="url(#lc-fill)" />
+                {refLine && refLine.value > 0 && (() => {
+                    const y = padY + innerH - (refLine.value / max) * innerH;
+                    return (
+                        <g>
+                            <line
+                                x1={padX}
+                                y1={y}
+                                x2={width - padX}
+                                y2={y}
+                                stroke="var(--muted-foreground)"
+                                strokeWidth={1}
+                                strokeDasharray="4 3"
+                                vectorEffect="non-scaling-stroke"
+                            />
+                            <title>{refLine.label ?? "Budget"}: {refLine.value.toLocaleString()}{valueSuffix}</title>
+                        </g>
+                    );
+                })()}
                 <path
                     d={linePath}
                     fill="none"
