@@ -147,7 +147,7 @@ build on the existing referral backend (`lib/referral.ts`, `referralCode`/`refer
 ## Log (newest first)
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
 
-### 2026-09-20 (6:0xpm) — Tier 9 MC polish: control-room layout + budget line + cost-per-run leaderboard ✅ (commit `f7c07fd`, pushed, NO schema change)
+### 2026-09-20 (6:0xpm) — Tier 9 MC polish: control-room layout + budget line + cost-per-run leaderboard ✅ (commit `cba7dda`, pushed, NO schema change)
 - **Built the last Tier 9 item** — tied Mission Control together into a cohesive command center. `npx tsc --noEmit` exit 0. **NO schema change.** Committed AND pushed to origin/main (Vercel auto-deploys). **Tier 9 Mission Control is now COMPLETE.**
 - **Control-room command bar** (`usage-view.tsx`): a top hairline-bordered status strip — Radar icon + `.eyebrow` "Fleet status" + a live pulse dot (green healthy / red on errors, `animate-pulse` while any query is refetching) + "Live · auto-refresh 60s" (or "Refreshing…") + at-a-glance healthy/err-24h/last-updated on the right. Makes the tab read as a live console, not a static report.
 - **Configurable monthly-budget line + alert:** a budget input (localStorage-persisted as `mc.monthlyBudget` — a personal ops knob, no schema/tRPC needed). When set: the **Projected month** tile flips to destructive styling + shows `% of $X budget` when the run-rate projection exceeds it; a budget bar shows headroom (on-track) or the over-by amount (alert); and the 30d daily-cost `LineChart` gets a **dashed daily-budget-pace reference line** (`budget/30`). Added an optional `refLine` prop to `LineChart` (`charts.tsx`) — theme-token dashed line, no new deps.
