@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard, ScrollText, KeyRound, ShieldCheck, UserCog, MessagesSquare, LineChart, CalendarDays, Layers, Activity, HeartPulse, Lightbulb } from "lucide-react";
+import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard, ScrollText, KeyRound, ShieldCheck, UserCog, MessagesSquare, LineChart, CalendarDays, Layers, Activity, HeartPulse, Lightbulb, Cpu } from "lucide-react";
 import { isIdeaLabOwner } from "@/lib/idea-lab";
 import {
     Sidebar,
@@ -58,7 +58,10 @@ export function AdminSidebar({ userEmail }: { userEmail?: string | null }) {
                             {[
                                 ...navItems,
                                 ...(showIdeaLab
-                                    ? [{ title: "Idea Lab", href: "/admin/idea-lab", icon: Lightbulb }]
+                                    ? [
+                                          { title: "Idea Lab", href: "/admin/idea-lab", icon: Lightbulb },
+                                          { title: "Usage", href: "/admin/usage", icon: Cpu },
+                                      ]
                                     : []),
                             ].map((item) => (
                                 <SidebarMenuItem key={item.href}>

@@ -10,7 +10,9 @@
 
 import * as React from "react";
 
-const CORAL = "#ff5c5c";
+// Monochrome accent (coral is retired per the design system) — resolves to the
+// theme `--primary` token so charts respect light + dark mode.
+const ACCENT = "var(--primary)";
 
 type Point = { label: string; value: number };
 
@@ -70,22 +72,22 @@ export function LineChart({
             >
                 <defs>
                     <linearGradient id="lc-fill" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={CORAL} stopOpacity="0.28" />
-                        <stop offset="100%" stopColor={CORAL} stopOpacity="0" />
+                        <stop offset="0%" stopColor={ACCENT} stopOpacity="0.28" />
+                        <stop offset="100%" stopColor={ACCENT} stopOpacity="0" />
                     </linearGradient>
                 </defs>
                 <path d={areaPath} fill="url(#lc-fill)" />
                 <path
                     d={linePath}
                     fill="none"
-                    stroke={CORAL}
+                    stroke={ACCENT}
                     strokeWidth={2}
                     strokeLinejoin="round"
                     strokeLinecap="round"
                     vectorEffect="non-scaling-stroke"
                 />
                 {points.map((p, i) => (
-                    <circle key={i} cx={p.x} cy={p.y} r={2.5} fill={CORAL}>
+                    <circle key={i} cx={p.x} cy={p.y} r={2.5} fill={ACCENT}>
                         <title>
                             {p.label}: {p.value.toLocaleString()}
                             {valueSuffix}
@@ -157,7 +159,7 @@ export function BarChart({
                             width={barW}
                             height={Math.max(0, h)}
                             rx={2}
-                            fill={CORAL}
+                            fill={ACCENT}
                             fillOpacity={0.85}
                         >
                             <title>
@@ -249,7 +251,7 @@ export function DualLineChart({
                 <span className="inline-flex items-center gap-1.5">
                     <span
                         className="inline-block h-2 w-2 rounded-full"
-                        style={{ background: CORAL }}
+                        style={{ background: ACCENT }}
                     />
                     {seriesA.name}
                 </span>
@@ -278,12 +280,12 @@ export function DualLineChart({
                 <path
                     d={toPath(seriesA.values)}
                     fill="none"
-                    stroke={CORAL}
+                    stroke={ACCENT}
                     strokeWidth={2}
                     vectorEffect="non-scaling-stroke"
                 />
                 {dots(seriesB.values, "currentColor")}
-                {dots(seriesA.values, CORAL)}
+                {dots(seriesA.values, ACCENT)}
             </svg>
             <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
                 <span>{labels[0]}</span>
