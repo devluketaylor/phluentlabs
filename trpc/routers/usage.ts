@@ -1,12 +1,11 @@
 import { ownerProcedure, router } from "@/trpc/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { desc, gte, sql } from "drizzle-orm";
-import { usageSnapshots, usageDaily } from "@/db/schemas/usage-snapshots";
+import { desc, gte } from "drizzle-orm";
+import { usageSnapshots, usageDaily, jobStatus, usageActivity } from "@/db/schemas/usage-snapshots";
 import { isIdeaLabOwner } from "@/lib/idea-lab";
 
-// Usage dashboard is owner-role AND email-gated to Luke (reuses the Idea Lab
-// owner check — same private-to-Luke rule).
+// Mission Control is owner-role AND email-gated to Luke.
 const usageProcedure = ownerProcedure.use(async ({ ctx, next }) => {
     if (!isIdeaLabOwner((ctx as any).adminEmail)) {
         throw new TRPCError({ code: "FORBIDDEN", message: "Private." });
@@ -15,7 +14,7 @@ const usageProcedure = ownerProcedure.use(async ({ ctx, next }) => {
 });
 
 export const usageRouter = router({
-    // Current all-time per-job rollups + totals.
+    // All-time per-job rollups + totals + per-agent split.
     summary: usageProcedure.query(async ({ ctx }) => {
         const rows = await ctx.db
             .select()
@@ -30,10 +29,57 @@ export const usageRouter = router({
             null,
         );
 
-        return { jobs: rows, totalTokens, totalCost, totalRuns, lastUpdated };
+        // Per-agent rollup (Tessie vs Tiger).
+        const byAgentMap = new Map<string, { agent: string; tokens: number; cost: number; runs: number; jobs: number }>();
+        for (const r of rows) {
+            const key = r.agent ?? "unknown";
+            const e = byAgentMap.get(key) ?? { agent: key, tokens: 0, cost: 0, runs: 0, jobs: 0 };
+            e.tokens += Number(r.totalTokens);
+            e.cost += Number(r.costUsd);
+            e.runs += Number(r.runs);
+            e.jobs += 1;
+            byAgentMap.set(key, e);
+        }
+        const byAgent = [...byAgentMap.values()].sort((a, b) => b.tokens - a.tokens);
+
+        return { jobs: rows, totalTokens, totalCost, totalRuns, lastUpdated, byAgent };
     }),
 
-    // Daily per-job series for over-time charts (default last 30 days).
+    // Per-job health tiles + fleet-level counts.
+    health: usageProcedure.query(async ({ ctx }) => {
+        const rows = await ctx.db.select().from(jobStatus).orderBy(desc(jobStatus.lastRunAt));
+        const runs24h = rows.reduce((a, r) => a + Number(r.runs24h), 0);
+        const errors24h = rows.reduce((a, r) => a + Number(r.errors24h), 0);
+        const okJobs = rows.filter((r) => r.lastStatus === "ok").length;
+        const errorJobs = rows.filter((r) => r.lastStatus && r.lastStatus !== "ok").length;
+        // Next upcoming run across all jobs.
+        const upcoming = rows
+            .filter((r) => r.nextRunAt)
+            .sort((a, b) => (a.nextRunAt!.getTime() - b.nextRunAt!.getTime()))[0] ?? null;
+        return {
+            jobs: rows,
+            totalJobs: rows.length,
+            okJobs,
+            errorJobs,
+            runs24h,
+            errors24h,
+            errorRate24h: runs24h ? errors24h / runs24h : 0,
+            nextRun: upcoming ? { jobName: upcoming.jobName, at: upcoming.nextRunAt } : null,
+        };
+    }),
+
+    // Recent activity feed.
+    activity: usageProcedure
+        .input(z.object({ limit: z.number().int().min(1).max(200).default(60) }).default({ limit: 60 }))
+        .query(async ({ input, ctx }) => {
+            return ctx.db
+                .select()
+                .from(usageActivity)
+                .orderBy(desc(usageActivity.ts))
+                .limit(input.limit);
+        }),
+
+    // Daily series + spend projection.
     daily: usageProcedure
         .input(z.object({ days: z.number().int().min(1).max(180).default(30) }).default({ days: 30 }))
         .query(async ({ input, ctx }) => {
@@ -43,6 +89,18 @@ export const usageRouter = router({
                 .from(usageDaily)
                 .where(gte(usageDaily.day, since))
                 .orderBy(usageDaily.day);
-            return rows;
+
+            // Month-to-date + run-rate projection.
+            const now = new Date();
+            const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+            let mtdCost = 0;
+            for (const r of rows) {
+                if (new Date(r.day) >= monthStart) mtdCost += Number(r.costUsd);
+            }
+            const dayOfMonth = now.getUTCDate();
+            const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+            const projectedMonthCost = dayOfMonth > 0 ? (mtdCost / dayOfMonth) * daysInMonth : 0;
+
+            return { rows, mtdCost, projectedMonthCost };
         }),
 });

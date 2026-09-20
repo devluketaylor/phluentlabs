@@ -127,6 +127,13 @@
       "when": 1789873075518,
       "tag": "0017_loving_slipstream",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789874409487,
+      "tag": "0018_military_the_twelve",
+      "breakpoints": true
     }
   ]
 }
