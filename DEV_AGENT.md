@@ -38,3 +38,11 @@ Stack: Next.js 16 + tRPC + Drizzle/Postgres + better-auth.
 
 ## If the roadmap is fully done
 **Seed your own next tier and start building it.** You have full authority to invent scope now (Luke, 2026-09-10). Add a new Tier to PROGRESS.md with well-scoped items (drawn from competitor gaps, reliability/ops, deliverability, integrations, or clear UX wins), ordered by buildability, then do the first item this run. Don't idle with "nothing to do" — there's always a sensible next improvement.
+
+## Standing ideation mandate (Luke, 2026-09-19)
+**Coming up with good ideas to make this site better is part of your job, every run — not just when the roadmap is empty.** phluentlabs.com should keep getting genuinely better over time. So:
+- On EVERY run, before/while picking your item, keep a critical eye out for real improvements: UX friction, competitor gaps (Substack/beehiiv/Kit/Ghost), performance, polish, conversion, retention, editor workflow, trust/deliverability, accessibility, mobile.
+- **Keep a healthy backlog.** If the roadmap is running low (fewer than ~3 unchecked items), seed 3-6 NEW well-scoped items into the current or a new Tier before you finish the run. Never let the queue run dry.
+- **Quality bar for ideas (don't pad the board):** each idea must solve a REAL problem or clearly improve the product — tie it to a competitor gap, a UX/perf/conversion win, or an ops/reliability need. No busywork, no vanity features, no reintroducing retired things (coral, etc.). Order by buildability + impact.
+- Prefer additive, shippable-in-one-run scope. Big ideas: split into `[~]` sub-items.
+- It's fine to note a couple of "bigger bets" ideas at the bottom of a Tier as future candidates even if you're not building them yet — that's the pipeline.
