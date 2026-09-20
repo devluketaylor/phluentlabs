@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard, ScrollText, KeyRound, ShieldCheck, UserCog, MessagesSquare, LineChart, CalendarDays, Layers, Activity, HeartPulse } from "lucide-react";
+import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard, ScrollText, KeyRound, ShieldCheck, UserCog, MessagesSquare, LineChart, CalendarDays, Layers, Activity, HeartPulse, Lightbulb } from "lucide-react";
+import { isIdeaLabOwner } from "@/lib/idea-lab";
 import {
     Sidebar,
     SidebarContent,
@@ -34,8 +35,10 @@ const navItems = [
     { title: "Team", href: "/admin/team", icon: UserCog },
 ];
 
-export function AdminSidebar() {
+export function AdminSidebar({ userEmail }: { userEmail?: string | null }) {
     const pathname = usePathname();
+    // Idea Lab link is PRIVATE — only rendered for Luke (email-gated).
+    const showIdeaLab = isIdeaLabOwner(userEmail);
 
     return (
         <Sidebar variant={"sidebar"} className={"bg-sidebar pt-43"}>
@@ -52,7 +55,12 @@ export function AdminSidebar() {
                     <SidebarGroupLabel>Newsletter</SidebarGroupLabel>
                     <SidebarGroupContent>
                         <SidebarMenu>
-                            {navItems.map((item) => (
+                            {[
+                                ...navItems,
+                                ...(showIdeaLab
+                                    ? [{ title: "Idea Lab", href: "/admin/idea-lab", icon: Lightbulb }]
+                                    : []),
+                            ].map((item) => (
                                 <SidebarMenuItem key={item.href}>
                                     <SidebarMenuButton asChild isActive={pathname === item.href}>
                                         <Link href={item.href}>

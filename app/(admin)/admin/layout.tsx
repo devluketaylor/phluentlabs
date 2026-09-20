@@ -24,7 +24,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
     return (
         <SidebarProvider>
-            <AdminSidebar />
+            <AdminSidebar userEmail={session.user.email} />
             <main className="flex-1 min-h-screen">
                 <div className="border-b px-4 py-3">
                     <SidebarTrigger />

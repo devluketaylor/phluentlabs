@@ -118,6 +118,16 @@ build on the existing referral backend (`lib/referral.ts`, `referralCode`/`refer
 ## Log (newest first)
 <!-- Each entry: date/time, what changed, commit hash if applicable, any blockers -->
 
+### 2026-09-19 (7:5xpm) — Luke-directed: private Idea Lab (owner-only startup-idea feed w/ learning loop) ✅ (additive migration `0016`)
+- **Luke-directed feature (not a roadmap item):** a PRIVATE "Idea Lab" in the admin panel where Tessie's startup-idea research bot pushes scored ideas, Luke thumbs each Good/Bad, and those verdicts become a taste profile fed back into future idea-engine runs. `npx tsc --noEmit` exit 0. **Additive-only schema (migration `0016_melodic_lionheart.sql`)** — one new `ideas` table (+2 indexes), no destructive ops.
+- **Hard-gated to Luke ONLY (`ltlukas@icloud.com`, via `lib/idea-lab.ts` / `IDEA_LAB_OWNER_EMAIL`)** — stricter than the owner role; enforced in THREE places: the `/admin/idea-lab` page (server redirect), the `ideaLab` tRPC router (`ownerProcedure` + email middleware), and the sidebar link (only rendered for his email). Even another owner/admin can't see or reach it.
+- **Schema** (`db/schemas/ideas.ts`): id, title, pitch, whyNow, score (/35), source, raw jsonb (full pushed payload), verdict (null=new / good / bad), verdictAt, createdAt.
+- **tRPC** (`trpc/routers/idea-lab.ts`): `list` (verdict-tab filtered + counts), `rate` (Good/Bad/clear, audit-logged `idea.rate`), `remove` (audit-logged `idea.delete`), `tasteProfile` (liked/disliked compact set to seed future runs).
+- **Push endpoint** (`app/api/idea-lab/push`): `POST` w/ `Authorization: Bearer <IDEA_LAB_PUSH_SECRET>` (private shared secret, refuses if unset — never open); accepts a single idea or `{ideas:[…]}` batch (max 50); validates title+pitch. This is how the research subagent pushes ideas in.
+- **UI** (`components/admin/idea-lab-view.tsx` + page + sidebar): New/Good/Bad tabs w/ counts, idea cards (score badge, source, why-now), 👍/👎/Clear/Delete actions, toasts. Monochrome palette (no coral), light/dark safe, no raw `@radix-ui/*`.
+- **Tested against dev (:3000 + :5433):** push endpoint — no-auth→401, bad-token→401, valid single→201, batch→inserted 2, missing-title→400. `.devdb/test-idea-lab.mjs` (gitignored) → **10/10 assertions** (rows land, raw JSON preserved, new starts unrated, rate→good/bad counts, taste profile). `/admin/idea-lab` → 307 auth-redirect (compiles, next.log clean). `.env`/`IDEA_LAB_PUSH_SECRET` confirmed gitignored — only source + migration committed.
+- **Note:** on prod, set `IDEA_LAB_PUSH_SECRET` in Vercel env for the push endpoint to work live; `IDEA_LAB_OWNER_EMAIL` defaults to Luke's so no config needed for the gate.
+
 ### 2026-09-13 (12:05pm) — Tier 8 #2: Autosave drafts + last-saved indicator ✅ (commit `95d8080`, pushed)
 - **Built debounced autosave for the rich editor** so a crash/navigate-away no longer loses in-progress draft work. `npx tsc --noEmit` exit 0. **NO schema change** (reused the existing `newsletters.updatedAt`). Committed AND pushed to origin/main (Vercel auto-deploys).
 - **Why:** the editor only persisted on an explicit "Save changes" click — closing the tab or a crash mid-write lost everything. This is the single biggest day-to-day authoring safety gap.
