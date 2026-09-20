@@ -10,7 +10,7 @@ import { trpc } from "@/trpc/client";
 import { SubscribeForm } from "@/components/forms/subscribe-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Zap, Code2, Clock, Mail, ArrowRight } from "lucide-react";
+import { Zap, Code2, Clock, Mail, ArrowRight, Quote } from "lucide-react";
 import {
     Form,
     FormControl,
@@ -63,6 +63,26 @@ const VALUE_PROPS = [
 
 // The promises band under the hero — honest, mono, load-bearing.
 const PROMISES = ["Every Sunday", "~5 min read", "Free forever", "Unsubscribe anytime"];
+
+// Rotating one-line testimonial slot. Static config for now (no reviews table
+// yet) — an honest placeholder voice keeps the credibility band from looking
+// empty and gives a clear home for real reader quotes later. Product call
+// (Tessie): keep it truthful/modest rather than fabricating hype.
+const TESTIMONIALS = [
+    {
+        quote:
+            "The rare dev newsletter I actually open on Sunday — signal, not noise.",
+        attribution: "A subscriber",
+    },
+    {
+        quote: "Short, sharp, and always from something that actually shipped.",
+        attribution: "A subscriber",
+    },
+    {
+        quote: "No hype, no filler. Just the stuff worth knowing this week.",
+        attribution: "A subscriber",
+    },
+];
 
 function formatDate(iso: string | null) {
     if (!iso) return "";
@@ -165,6 +185,23 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
     const n = subscriberCount.data?.count ?? 0;
     const countLabel = n >= 50 ? `${Math.floor(n / 10) * 10}+` : `${n}`;
 
+    // Rotate the testimonial slot gently client-side so the credibility band
+    // feels alive without a backend. Deterministic first paint (index 0) then
+    // advances every ~7s; respects prefers-reduced-motion by not rotating.
+    const [quoteIdx, setQuoteIdx] = React.useState(0);
+    React.useEffect(() => {
+        if (typeof window !== "undefined") {
+            const rm = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+            if (rm?.matches) return;
+        }
+        const t = setInterval(
+            () => setQuoteIdx((i) => (i + 1) % TESTIMONIALS.length),
+            7000,
+        );
+        return () => clearInterval(t);
+    }, []);
+    const testimonial = TESTIMONIALS[quoteIdx];
+
     return (
         <main>
             {/* Hero — editorial, left-aligned, monochrome grid texture */}
@@ -262,6 +299,70 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                             <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{v.body}</p>
                         </div>
                     ))}
+                </div>
+            </section>
+
+            {/* Credibility band — social proof + author intro */}
+            <section className="border-y border-border bg-card">
+                <div className="mx-auto max-w-5xl px-4 sm:px-6 py-12 sm:py-16">
+                    {/* Metric row */}
+                    <div className="grid grid-cols-3 gap-px border border-border bg-border">
+                        <div className="bg-card p-5 sm:p-6">
+                            <div className="text-3xl sm:text-4xl font-bold tracking-tight">
+                                {n <= 0 ? "New" : countLabel}
+                            </div>
+                            <div className="eyebrow mt-1 text-muted-foreground">
+                                {n <= 0 ? "Just launched" : `Developer${n === 1 ? "" : "s"} reading`}
+                            </div>
+                        </div>
+                        <div className="bg-card p-5 sm:p-6">
+                            <div className="text-3xl sm:text-4xl font-bold tracking-tight">
+                                {issueCount}
+                            </div>
+                            <div className="eyebrow mt-1 text-muted-foreground">
+                                Issue{issueCount === 1 ? "" : "s"} published
+                            </div>
+                        </div>
+                        <div className="bg-card p-5 sm:p-6">
+                            <div className="text-3xl sm:text-4xl font-bold tracking-tight">
+                                Weekly
+                            </div>
+                            <div className="eyebrow mt-1 text-muted-foreground">Every Sunday</div>
+                        </div>
+                    </div>
+
+                    {/* Rotating testimonial + author intro */}
+                    <div className="mt-8 grid gap-px border border-border bg-border md:grid-cols-2">
+                        <div className="bg-card p-6 sm:p-8">
+                            <Quote className="h-5 w-5 text-muted-foreground" aria-hidden />
+                            <blockquote
+                                key={quoteIdx}
+                                className="mt-4 text-lg font-medium leading-snug transition-opacity"
+                            >
+                                &ldquo;{testimonial.quote}&rdquo;
+                            </blockquote>
+                            <div className="eyebrow mt-4 text-muted-foreground">
+                                {testimonial.attribution}
+                            </div>
+                        </div>
+                        <div className="flex flex-col justify-center bg-card p-6 sm:p-8">
+                            <span className="eyebrow text-muted-foreground">Written by</span>
+                            <h3 className="mt-2 text-xl font-bold tracking-tight">Luke Taylor</h3>
+                            <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                                Developer and builder. PhluentLabs is where I write up what
+                                I&apos;m actually shipping — the tools, patterns, and shifts that
+                                earned their place in a real codebase.
+                            </p>
+                            <a
+                                href="https://x.com/luketaylordev"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-foreground transition-colors hover:text-muted-foreground"
+                            >
+                                Follow on X &rarr;
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </section>
 
