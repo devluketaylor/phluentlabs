@@ -265,10 +265,21 @@ export const adminNewsletterRouter = router({
     // format). The copy is ALWAYS a new draft with its own id/slug and NO
     // send state (never inherits scheduledAt/sentAt/analytics), so cloning a
     // sent issue can never accidentally re-publish or re-send anything. Content
-    // (html, preheader, publication, A/B subjectB) carries over; the subject is
-    // prefixed "Copy of " so it's obvious in the list.
+    // (html, preheader, A/B subjectB) carries over; the subject is prefixed
+    // "Copy of " so it's obvious in the list.
+    //
+    // publicationId (optional): re-home the clone into a chosen publication —
+    // handy for spinning a past issue into a different stream. When omitted
+    // (undefined) the clone inherits the source's publication; pass null to
+    // explicitly place it on the primary/default stream. An unknown id is
+    // rejected so we never orphan the copy against a non-existent publication.
     duplicate: editorProcedure
-        .input(z.object({ id: z.string().min(1) }))
+        .input(
+            z.object({
+                id: z.string().min(1),
+                publicationId: z.string().nullish(),
+            }),
+        )
         .mutation(async ({ input, ctx }) => {
             const [source] = await ctx.db
                 .select()
@@ -276,6 +287,25 @@ export const adminNewsletterRouter = router({
                 .where(eq(newsletters.id, input.id));
             if (!source) {
                 throw new TRPCError({ code: "NOT_FOUND", message: "Newsletter not found" });
+            }
+
+            // Resolve the target publication. undefined => inherit source;
+            // null/"" => primary/default stream (NULL column); a non-empty id
+            // must exist.
+            let targetPublicationId: string | null;
+            if (input.publicationId === undefined) {
+                targetPublicationId = source.publicationId ?? null;
+            } else if (input.publicationId) {
+                const [pub] = await ctx.db
+                    .select({ id: publications.id })
+                    .from(publications)
+                    .where(eq(publications.id, input.publicationId));
+                if (!pub) {
+                    throw new TRPCError({ code: "NOT_FOUND", message: "Publication not found" });
+                }
+                targetPublicationId = pub.id;
+            } else {
+                targetPublicationId = null;
             }
 
             const id = crypto.randomUUID();
@@ -292,7 +322,7 @@ export const adminNewsletterRouter = router({
                 subjectB: source.subjectB ?? null,
                 html: source.html,
                 preheader: source.preheader ?? null,
-                publicationId: source.publicationId ?? null,
+                publicationId: targetPublicationId,
                 status: "draft",
                 createdBy: ctx.adminUserId,
             });
@@ -300,7 +330,12 @@ export const adminNewsletterRouter = router({
                 action: "newsletter.duplicate",
                 targetType: "newsletter",
                 targetId: id,
-                metadata: { sourceId: source.id, subject: newSubject, slug },
+                metadata: {
+                    sourceId: source.id,
+                    subject: newSubject,
+                    slug,
+                    publicationId: targetPublicationId,
+                },
             });
             return { ok: true, id, slug };
         }),

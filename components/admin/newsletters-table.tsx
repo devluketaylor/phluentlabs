@@ -211,16 +211,11 @@ export function NewslettersTable() {
                                                 error={send.error?.message}
                                             />
                                         )}
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            title="Duplicate as a new draft"
-                                            onClick={() => duplicate.mutate({ id: n.id })}
-                                            disabled={duplicate.isPending}
-                                        >
-                                            <Copy className="size-4" />
-                                            Duplicate
-                                        </Button>
+                                        <DuplicateNewsletterDialog
+                                            newsletter={{ id: n.id, subject: n.subject, publicationId: n.publicationId ?? null }}
+                                            onDuplicate={(vars) => duplicate.mutate(vars)}
+                                            duplicating={duplicate.isPending}
+                                        />
                                         <Button
                                             variant="destructive"
                                             size="sm"
@@ -397,6 +392,90 @@ function ScheduleDialog({
 // One-click "Copy preview link" for a non-sent draft: mints a signed, expiring
 // proof URL server-side (secret never leaves the server) and copies it to the
 // clipboard so a reviewer can proof the issue on any device before send.
+// Duplicate an issue into a fresh draft, optionally re-homing it into a
+// different publication/stream. "Same as original" (the default) preserves the
+// source's publication so the common case is one click; the picker only matters
+// when spinning a past issue into another stream.
+const SAME_AS_SOURCE = "__same__";
+const PRIMARY_STREAM = "__primary__";
+
+function DuplicateNewsletterDialog({
+    newsletter,
+    onDuplicate,
+    duplicating,
+}: {
+    newsletter: { id: string; subject: string; publicationId: string | null };
+    onDuplicate: (vars: { id: string; publicationId?: string | null }) => void;
+    duplicating: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    const [choice, setChoice] = useState<string>(SAME_AS_SOURCE);
+    const pubs = trpc.adminPublications.list.useQuery(undefined, { enabled: open });
+
+    const handleDuplicate = () => {
+        // undefined => inherit source publication; null => primary/default
+        // stream; a real id => that publication.
+        let publicationId: string | null | undefined;
+        if (choice === SAME_AS_SOURCE) publicationId = undefined;
+        else if (choice === PRIMARY_STREAM) publicationId = null;
+        else publicationId = choice;
+        onDuplicate({ id: newsletter.id, publicationId });
+        setOpen(false);
+        setChoice(SAME_AS_SOURCE);
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="sm" title="Duplicate as a new draft">
+                    <Copy className="size-4" />
+                    Duplicate
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Duplicate issue</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                        Creates a fresh <span className="font-medium text-foreground">draft</span> copy of
+                        {" "}
+                        <span className="font-medium text-foreground">{newsletter.subject}</span> with no
+                        send state. Choose which publication it lands in.
+                    </p>
+                    <div className="space-y-1.5">
+                        <label className="eyebrow text-xs">Publication</label>
+                        <Select value={choice} onValueChange={setChoice}>
+                            <SelectTrigger>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={SAME_AS_SOURCE}>Same as original</SelectItem>
+                                <SelectItem value={PRIMARY_STREAM}>Primary / default stream</SelectItem>
+                                {(pubs.data?.rows ?? [])
+                                    .filter((p) => !p.isPrimary)
+                                    .map((p) => (
+                                        <SelectItem key={p.id} value={p.id}>
+                                            {p.name}
+                                        </SelectItem>
+                                    ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => setOpen(false)} disabled={duplicating}>
+                        Cancel
+                    </Button>
+                    <Button onClick={handleDuplicate} disabled={duplicating}>
+                        {duplicating ? "Duplicating…" : "Duplicate"}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 function CopyPreviewLinkButton({ id }: { id: string }) {
     const [copied, setCopied] = useState(false);
     const mint = trpc.adminNewsletter.previewLink.useMutation({

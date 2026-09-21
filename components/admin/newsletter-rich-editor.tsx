@@ -50,6 +50,8 @@ const ResizableImage = Image.extend({
     },
 });
 import { Placeholder } from "@tiptap/extensions";
+import { DOMSerializer } from "@tiptap/pm/model";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -61,6 +63,13 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+    Dialog,
+    DialogContent,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import { UploadButton } from "@/lib/uploadthing";
 import { newsletterTemplates } from "@/lib/newsletter-templates";
 import { trpc } from "@/trpc/client";
@@ -81,6 +90,11 @@ export const NewsletterRichEditor = ({
     const [link, setLink] = useState("");
     const [imageSelected, setImageSelected] = useState(false);
     const [imageAlt, setImageAlt] = useState("");
+    // "Save selection as snippet" dialog state.
+    const [saveSnippetOpen, setSaveSnippetOpen] = useState(false);
+    const [snippetName, setSnippetName] = useState("");
+    const [snippetDescription, setSnippetDescription] = useState("");
+    const [pendingSnippetHtml, setPendingSnippetHtml] = useState("");
 
     // Saved reusable content blocks / snippets (Tier 8 snippet library).
     // Read-only here — managed on /admin/content-blocks. Inserted at the cursor
@@ -93,6 +107,22 @@ export const NewsletterRichEditor = ({
     // Fire-and-forget usage bump so the toolbar can surface the most-reached-for
     // snippets first. We don't await it or block the insert on it.
     const recordSnippetUse = trpc.adminContentBlocks.recordUse.useMutation();
+
+    // "Save selection as snippet" — turn the current editor selection into a
+    // reusable content block in one step (reuses the same create mutation the
+    // /admin/content-blocks page uses).
+    const utils = trpc.useUtils();
+    const createSnippet = trpc.adminContentBlocks.create.useMutation({
+        onSuccess: () => {
+            utils.adminContentBlocks.list.invalidate();
+            toast.success("Saved as a snippet");
+            setSaveSnippetOpen(false);
+            setSnippetName("");
+            setSnippetDescription("");
+            setPendingSnippetHtml("");
+        },
+        onError: (err) => toast.error(err.message || "Failed to save snippet"),
+    });
 
     // Most-used snippets, surfaced as one-click toolbar buttons (not buried in
     // the dropdown). Order by use count desc, then most-recently-used, then
@@ -235,6 +265,52 @@ export const NewsletterRichEditor = ({
     const insertSnippet = (id: string, html: string) => {
         insertTemplate(html);
         recordSnippetUse.mutate({ id });
+    };
+
+    // Serialize the current selection to HTML. tiptap doesn't expose selected
+    // HTML directly, so we grab the selected slice's content, wrap it in a
+    // detached tiptap doc, and render THAT to HTML via a temporary DOM
+    // serializer — the same schema the editor uses, so styling/marks survive.
+    const getSelectedHtml = (): string => {
+        const { state } = editor;
+        const { from, to } = state.selection;
+        if (from === to) return "";
+        const slice = state.doc.slice(from, to);
+        const fragment = DOMSerializer.fromSchema(state.schema).serializeFragment(
+            slice.content,
+        );
+        const div = document.createElement("div");
+        div.appendChild(fragment);
+        return div.innerHTML.trim();
+    };
+
+    const openSaveSnippet = () => {
+        const html = getSelectedHtml();
+        if (!html) {
+            toast.error("Select some content first, then save it as a snippet");
+            return;
+        }
+        setPendingSnippetHtml(html);
+        setSnippetName("");
+        setSnippetDescription("");
+        setSaveSnippetOpen(true);
+    };
+
+    const saveSnippet = () => {
+        const name = snippetName.trim();
+        if (!name) {
+            toast.error("Give the snippet a name");
+            return;
+        }
+        if (!pendingSnippetHtml) {
+            toast.error("Nothing selected to save");
+            return;
+        }
+        createSnippet.mutate({
+            name,
+            description: snippetDescription.trim() || null,
+            html: pendingSnippetHtml,
+        });
     };
 
     const setImageWidth = (width: string | null) => {
@@ -431,6 +507,16 @@ export const NewsletterRichEditor = ({
                     </DropdownMenuContent>
                 </DropdownMenu>
 
+                <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    title="Save the selected content as a reusable snippet"
+                    onClick={openSaveSnippet}
+                >
+                    Save selection
+                </Button>
+
                 {quickSnippets.length > 0 && (
                     <>
                         <Separator orientation="vertical" className="mx-1 h-8" />
@@ -605,6 +691,56 @@ export const NewsletterRichEditor = ({
             <Separator />
 
             <EditorContent editor={editor} />
+
+            <Dialog open={saveSnippetOpen} onOpenChange={setSaveSnippetOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Save selection as snippet</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <p className="text-sm text-muted-foreground">
+                            The selected content becomes a reusable block you can insert into any
+                            issue from the Snippets menu.
+                        </p>
+                        <div className="space-y-1.5">
+                            <label className="eyebrow text-xs">Name</label>
+                            <Input
+                                value={snippetName}
+                                onChange={(e) => setSnippetName(e.target.value)}
+                                placeholder="e.g. Sign-off"
+                                maxLength={120}
+                                autoFocus
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="eyebrow text-xs">Description (optional)</label>
+                            <Input
+                                value={snippetDescription}
+                                onChange={(e) => setSnippetDescription(e.target.value)}
+                                placeholder="What is this block for?"
+                                maxLength={300}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => setSaveSnippetOpen(false)}
+                            disabled={createSnippet.isPending}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="button"
+                            onClick={saveSnippet}
+                            disabled={createSnippet.isPending || !snippetName.trim()}
+                        >
+                            {createSnippet.isPending ? "Saving…" : "Save snippet"}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };
