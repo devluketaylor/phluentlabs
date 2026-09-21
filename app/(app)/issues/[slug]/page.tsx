@@ -10,6 +10,7 @@ import { IssueReactions } from "@/components/issue-reactions";
 import { IssueSubscribeCta } from "@/components/issue-subscribe-cta";
 import { StickySubscribe } from "@/components/sticky-subscribe";
 import { PageViewBeacon } from "@/components/page-view-beacon";
+import { ReadingProgress } from "@/components/reading-progress";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -177,6 +178,8 @@ export default async function IssuePage({ params }: Props) {
 
     return (
         <div className="max-w-2xl mx-auto px-4 py-10 sm:px-6 sm:py-12">
+            {/* Slim scroll-driven reading-progress bar (monochrome, reduced-motion aware). */}
+            <ReadingProgress />
             <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}

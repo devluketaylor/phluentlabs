@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { FaXTwitter, FaLinkedin, FaLink, FaCheck } from "react-icons/fa6";
+import { useEffect, useState } from "react";
+import { FaXTwitter, FaLinkedin, FaLink, FaCheck, FaShareNodes } from "react-icons/fa6";
 
 /**
  * Prominent social share row for a public issue. Server passes the absolute URL
@@ -19,6 +19,16 @@ export function IssueShare({
     slug?: string;
 }) {
     const [copied, setCopied] = useState(false);
+    // Only reveal the native-share button once we've confirmed the browser
+    // supports it (mobile/Safari mostly). Detected client-side after mount so
+    // SSR markup stays deterministic and the fallback buttons always render.
+    const [canNativeShare, setCanNativeShare] = useState(false);
+
+    useEffect(() => {
+        setCanNativeShare(
+            typeof navigator !== "undefined" && typeof navigator.share === "function",
+        );
+    }, []);
 
     const encodedUrl = encodeURIComponent(url);
     const encodedTitle = encodeURIComponent(title);
@@ -38,6 +48,18 @@ export function IssueShare({
             }).catch(() => {});
         } catch {
             // ignore — analytics must never break sharing
+        }
+    };
+
+    const nativeShare = async () => {
+        // Count native shares under the same "copy" channel — it's a generic
+        // link-share, not X/LinkedIn specifically.
+        recordShare("copy");
+        try {
+            await navigator.share({ title, url });
+        } catch {
+            // User cancelled or share failed — nothing to do; the fallback
+            // buttons remain available.
         }
     };
 
@@ -61,6 +83,17 @@ export function IssueShare({
                 Enjoyed this? Share it
             </span>
             <div className="flex flex-wrap items-center gap-2">
+                {canNativeShare && (
+                    <button
+                        type="button"
+                        onClick={nativeShare}
+                        className={btnClass}
+                        aria-label="Share"
+                    >
+                        <FaShareNodes className="h-4 w-4" />
+                        <span>Share</span>
+                    </button>
+                )}
                 <a
                     href={twitter}
                     target="_blank"
