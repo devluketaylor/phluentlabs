@@ -197,7 +197,7 @@ export function NewslettersTable() {
                                         />
                                         {n.status !== "sent" && (
                                             <ScheduleDialog
-                                                newsletter={n}
+                                                newsletter={{ subject: n.subject, subjectB: n.subjectB ?? null, status: n.status, scheduledAt: n.scheduledAt }}
                                                 onSchedule={(scheduledAt) =>
                                                     schedule.mutateAsync({ id: n.id, scheduledAt })
                                                 }
@@ -205,7 +205,7 @@ export function NewslettersTable() {
                                         )}
                                         {n.status !== "sent" && (
                                             <SendNewsletterDialog
-                                                newsletter={n}
+                                                newsletter={{ id: n.id, subject: n.subject, subjectB: n.subjectB ?? null }}
                                                 onSend={({ tag, cohort }) => send.mutate({ id: n.id, tag, cohort })}
                                                 sending={send.isPending}
                                                 error={send.error?.message}
@@ -301,7 +301,7 @@ function ScheduleDialog({
     newsletter,
     onSchedule,
 }: {
-    newsletter: { subject: string; status: string; scheduledAt?: Date | string | null };
+    newsletter: { subject: string; subjectB?: string | null; status: string; scheduledAt?: Date | string | null };
     onSchedule: (scheduledAt: string | null) => Promise<unknown>;
 }) {
     const [open, setOpen] = useState(false);
@@ -315,6 +315,14 @@ function ScheduleDialog({
     // can pick a high-engagement send time. Only fetch while the dialog is open.
     const { data: sendTime } = trpc.adminDashboard.sendTimeInsights.useQuery(
         undefined,
+        { enabled: open, refetchOnWindowFocus: false }
+    );
+
+    // Scheduled sends target every confirmed subscriber (no per-issue segment is
+    // persisted for a scheduled send), so preview the All audience so the admin
+    // sees the resolved recipient count + A/B split before scheduling.
+    const preview = trpc.adminNewsletter.audiencePreview.useQuery(
+        { tag: null, cohort: null },
         { enabled: open, refetchOnWindowFocus: false }
     );
 
@@ -356,13 +364,20 @@ function ScheduleDialog({
                 {sendTime && sendTime.hasSignal && (
                     <p className="text-xs text-muted-foreground">
                         💡 Readers open most on{" "}
-                        <span className="font-medium text-[#ff5c5c]">
+                        <span className="font-medium text-foreground">
                             {sendTime.recommendation.day}s around{" "}
                             {sendTime.recommendation.windowLabel}
                         </span>{" "}
                         — consider sending then.
                     </p>
                 )}
+                <ConfirmationSummary
+                    subject={newsletter.subject}
+                    subjectB={newsletter.subjectB}
+                    audienceLabel="All confirmed subscribers"
+                    count={preview.data?.count}
+                    loading={preview.isFetching}
+                />
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 <DialogFooter className="gap-2">
                     {isScheduled && (
@@ -547,13 +562,80 @@ const COHORT_PREFIX = "__cohort__:";
 const COHORT_ATRISK = `${COHORT_PREFIX}atRisk`;
 const COHORT_DORMANT = `${COHORT_PREFIX}dormant`;
 
+// A/B subject-line split: the send path splits the audience ~50/50 across the
+// two subjects deterministically per subscriber. Preview that split for a total
+// recipient count so the confirmation summary can show it before send.
+function abSplitFor(total: number): { a: number; b: number } {
+    const a = Math.ceil(total / 2);
+    return { a, b: total - a };
+}
+
+// Shared confirmation-summary recap block used by both the Send and Schedule
+// dialogs so an admin always sees subject + audience + resolved recipient count
+// (+ A/B split) before committing an irreversible send.
+function ConfirmationSummary({
+    subject,
+    subjectB,
+    audienceLabel,
+    count,
+    loading,
+}: {
+    subject: string;
+    subjectB?: string | null;
+    audienceLabel: string;
+    count?: number;
+    loading?: boolean;
+}) {
+    const hasAb = !!subjectB?.trim();
+    const split = typeof count === "number" && hasAb ? abSplitFor(count) : null;
+    return (
+        <div className="space-y-2 border border-border p-3 text-sm">
+            <div className="eyebrow text-muted-foreground">Confirm send</div>
+            <dl className="space-y-1.5">
+                <div className="flex gap-2">
+                    <dt className="w-24 shrink-0 text-muted-foreground">Subject</dt>
+                    <dd className="min-w-0 flex-1 truncate font-medium text-foreground">{subject}</dd>
+                </div>
+                {hasAb && (
+                    <div className="flex gap-2">
+                        <dt className="w-24 shrink-0 text-muted-foreground">Subject B</dt>
+                        <dd className="min-w-0 flex-1 truncate font-medium text-foreground">{subjectB}</dd>
+                    </div>
+                )}
+                <div className="flex gap-2">
+                    <dt className="w-24 shrink-0 text-muted-foreground">Audience</dt>
+                    <dd className="min-w-0 flex-1 text-foreground">{audienceLabel}</dd>
+                </div>
+                <div className="flex gap-2">
+                    <dt className="w-24 shrink-0 text-muted-foreground">Recipients</dt>
+                    <dd className="min-w-0 flex-1 font-medium text-foreground">
+                        {loading
+                            ? "Resolving…"
+                            : typeof count === "number"
+                              ? `${count.toLocaleString()} subscriber${count === 1 ? "" : "s"}`
+                              : "—"}
+                    </dd>
+                </div>
+                {split && (
+                    <div className="flex gap-2">
+                        <dt className="w-24 shrink-0 text-muted-foreground">A/B split</dt>
+                        <dd className="min-w-0 flex-1 text-foreground">
+                            ~{split.a.toLocaleString()} get subject A · ~{split.b.toLocaleString()} get subject B
+                        </dd>
+                    </div>
+                )}
+            </dl>
+        </div>
+    );
+}
+
 function SendNewsletterDialog({
     newsletter,
     onSend,
     sending,
     error,
 }: {
-    newsletter: { id: string; subject: string };
+    newsletter: { id: string; subject: string; subjectB?: string | null };
     onSend: (audience: { tag: string | null; cohort: "atRisk" | "dormant" | null }) => void;
     sending: boolean;
     error?: string;
@@ -587,6 +669,13 @@ function SendNewsletterDialog({
 
     const targetCount = preview.data?.count;
     const emptyTarget = targetCount === 0;
+
+    // Human-readable audience label for the confirmation recap.
+    const audienceLabel = cohort
+        ? `Win-back — ${cohort === "atRisk" ? "at-risk" : "dormant"} subscribers`
+        : tag
+          ? `Confirmed subscribers tagged “${tag}”`
+          : "All confirmed subscribers";
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -643,6 +732,14 @@ function SendNewsletterDialog({
                         </p>
                     )}
                 </div>
+
+                <ConfirmationSummary
+                    subject={newsletter.subject}
+                    subjectB={newsletter.subjectB}
+                    audienceLabel={audienceLabel}
+                    count={targetCount}
+                    loading={preview.isFetching}
+                />
 
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 <DialogFooter>
