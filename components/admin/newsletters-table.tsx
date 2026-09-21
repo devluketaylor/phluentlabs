@@ -30,6 +30,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
+import { IssueLintPanel } from "@/components/admin/issue-lint-panel";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
 import { BarChart3, Link2, Check, Copy } from "lucide-react";
@@ -885,6 +886,8 @@ function EditNewsletterDialog({
                             placeholder="Write the email body"
                         />
                     </div>
+
+                    <IssueLintPanel html={html} preheader={preheader} />
 
                     <div className="flex justify-end gap-2 pt-2">
                         <Button variant="secondary" onClick={() => setOpen(false)}>
