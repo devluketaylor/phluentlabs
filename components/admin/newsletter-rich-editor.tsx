@@ -7,6 +7,27 @@ import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 
+// Extend the base Link mark with a passthrough `style` attribute so an
+// inline-styled CTA button (email-safe <a> with display/background/padding)
+// survives getHTML()/setContent() round-trips. Without this, tiptap's Link
+// mark keeps only href + configured HTMLAttributes and drops inline styling,
+// which would flatten the button back to a plain link.
+const StyledLink = Link.extend({
+    addAttributes() {
+        return {
+            ...this.parent?.(),
+            style: {
+                default: null,
+                parseHTML: (element) => element.getAttribute("style"),
+                renderHTML: (attributes) => {
+                    if (!attributes.style) return {};
+                    return { style: attributes.style };
+                },
+            },
+        };
+    },
+});
+
 // Extend the base Image node with a `width` attribute so we can offer
 // small/medium/full sizing. Rendered as an inline max-width style + attr
 // so it round-trips through getHTML()/setContent() and survives sending.
@@ -97,7 +118,7 @@ export const NewsletterRichEditor = ({
                 orderedList: { keepMarks: true, keepAttributes: false },
             }),
             Underline,
-            Link.configure({
+            StyledLink.configure({
                 openOnClick: false,
                 autolink: true,
                 linkOnPaste: true,
@@ -165,6 +186,48 @@ export const NewsletterRichEditor = ({
 
     const insertTemplate = (html: string) => {
         editor.chain().focus().insertContent(html).run();
+    };
+
+    // First-class editor primitives editors reach for most that aren't in
+    // StarterKit's toolbar. All email-safe: rendered as inline-styled block HTML
+    // (no external CSS) so they survive the raw-HTML send layer intact.
+    // Theme color is intentionally NOT hard-coded (no retired coral) — buttons
+    // use neutral near-black/near-white inline styles that read on both a white
+    // and a dark email background.
+    const insertDivider = () => {
+        // StarterKit ships horizontalRule; use the command so it round-trips.
+        editor.chain().focus().setHorizontalRule().run();
+    };
+
+    const insertSpacer = () => {
+        // Vertical breathing room between blocks. An empty paragraph with a
+        // fixed line-height is the most email-client-safe way to add space
+        // (margins on empty <div>s get collapsed by some clients).
+        editor
+            .chain()
+            .focus()
+            .insertContent(
+                '<p style="line-height:32px;margin:0;">&nbsp;</p>',
+            )
+            .run();
+    };
+
+    const insertButton = () => {
+        // Email-safe CTA: an inline-block styled anchor. Inline styles only so
+        // it survives the send layer with no stylesheet. Neutral high-contrast
+        // palette (dark pill / light text) per the monochrome design system.
+        editor
+            .chain()
+            .focus()
+            .insertContent(
+                '<p style="text-align:center;margin:24px 0;">' +
+                    '<a href="https://example.com" ' +
+                    'style="display:inline-block;background:#111111;color:#ffffff;' +
+                    'text-decoration:none;font-weight:600;padding:12px 28px;' +
+                    'border-radius:6px;font-size:15px;">Button text</a>' +
+                    "</p>",
+            )
+            .run();
     };
 
     // Insert a saved snippet + bump its usage counter (fire-and-forget). Used by
@@ -272,6 +335,38 @@ export const NewsletterRichEditor = ({
                     onClick={() => editor.chain().focus().toggleOrderedList().run()}
                 >
                     Numbered
+                </Button>
+
+                <Separator orientation="vertical" className="mx-1 h-8" />
+
+                <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    title="Insert a horizontal divider"
+                    onClick={insertDivider}
+                >
+                    Divider
+                </Button>
+
+                <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    title="Insert vertical spacing"
+                    onClick={insertSpacer}
+                >
+                    Spacer
+                </Button>
+
+                <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    title="Insert an email-safe call-to-action button"
+                    onClick={insertButton}
+                >
+                    Button
                 </Button>
 
                 <Separator orientation="vertical" className="mx-1 h-8" />
