@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UploadButton } from "@/lib/uploadthing";
 import { newsletterTemplates } from "@/lib/newsletter-templates";
+import { trpc } from "@/trpc/client";
 
 type Props = {
     value: string;
@@ -59,6 +60,14 @@ export const NewsletterRichEditor = ({
     const [link, setLink] = useState("");
     const [imageSelected, setImageSelected] = useState(false);
     const [imageAlt, setImageAlt] = useState("");
+
+    // Saved reusable content blocks / snippets (Tier 8 snippet library).
+    // Read-only here — managed on /admin/content-blocks. Inserted at the cursor
+    // via the same insertContent plumbing the static templates use.
+    const snippets = trpc.adminContentBlocks.list.useQuery(undefined, {
+        staleTime: 60_000,
+    });
+    const snippetRows = snippets.data?.rows ?? [];
 
     const editor = useEditor({
         immediatelyRender: false,
@@ -260,6 +269,42 @@ export const NewsletterRichEditor = ({
                                 <span className="text-xs text-muted-foreground">
                                     {tpl.description}
                                 </span>
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="secondary" size="sm">
+                            Snippets
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-64">
+                        <DropdownMenuLabel>Insert a saved snippet</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {snippets.isLoading && (
+                            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                Loading…
+                            </div>
+                        )}
+                        {!snippets.isLoading && snippetRows.length === 0 && (
+                            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                                No saved snippets yet. Create them under Snippets in the admin sidebar.
+                            </div>
+                        )}
+                        {snippetRows.map((s) => (
+                            <DropdownMenuItem
+                                key={s.id}
+                                onSelect={() => insertTemplate(s.html)}
+                                className="flex flex-col items-start gap-0.5"
+                            >
+                                <span className="font-medium">{s.name}</span>
+                                {s.description && (
+                                    <span className="text-xs text-muted-foreground">
+                                        {s.description}
+                                    </span>
+                                )}
                             </DropdownMenuItem>
                         ))}
                     </DropdownMenuContent>

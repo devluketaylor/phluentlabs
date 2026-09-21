@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard, ScrollText, KeyRound, ShieldCheck, UserCog, MessagesSquare, LineChart, CalendarDays, Layers, Activity, HeartPulse, Lightbulb, Radar } from "lucide-react";
+import { MailPlus, Newspaper, Users, LogOut, LayoutDashboard, ScrollText, KeyRound, ShieldCheck, UserCog, MessagesSquare, LineChart, CalendarDays, Layers, Activity, HeartPulse, Lightbulb, Radar, Blocks } from "lucide-react";
 import { isIdeaLabOwner } from "@/lib/idea-lab";
 import {
     Sidebar,
@@ -24,6 +24,7 @@ const navItems = [
     { title: "Create Newsletter", href: "/admin", icon: MailPlus },
     { title: "Newsletters", href: "/admin/newsletters", icon: Newspaper },
     { title: "Publications", href: "/admin/publications", icon: Layers },
+    { title: "Snippets", href: "/admin/content-blocks", icon: Blocks },
     { title: "Calendar", href: "/admin/calendar", icon: CalendarDays },
     { title: "Subscribers", href: "/admin/subscribers", icon: Users },
     { title: "Engagement", href: "/admin/engagement", icon: Activity },
