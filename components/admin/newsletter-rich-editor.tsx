@@ -69,6 +69,25 @@ export const NewsletterRichEditor = ({
     });
     const snippetRows = snippets.data?.rows ?? [];
 
+    // Fire-and-forget usage bump so the toolbar can surface the most-reached-for
+    // snippets first. We don't await it or block the insert on it.
+    const recordSnippetUse = trpc.adminContentBlocks.recordUse.useMutation();
+
+    // Most-used snippets, surfaced as one-click toolbar buttons (not buried in
+    // the dropdown). Order by use count desc, then most-recently-used, then
+    // newest; cap at 4 so the toolbar stays tidy.
+    const quickSnippets = [...snippetRows]
+        .sort((a, b) => {
+            if (b.useCount !== a.useCount) return b.useCount - a.useCount;
+            const at = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+            const bt = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+            if (bt !== at) return bt - at;
+            return (
+                new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+        })
+        .slice(0, 4);
+
     const editor = useEditor({
         immediatelyRender: false,
         extensions: [
@@ -146,6 +165,13 @@ export const NewsletterRichEditor = ({
 
     const insertTemplate = (html: string) => {
         editor.chain().focus().insertContent(html).run();
+    };
+
+    // Insert a saved snippet + bump its usage counter (fire-and-forget). Used by
+    // both the Snippets dropdown and the quick-insert toolbar buttons.
+    const insertSnippet = (id: string, html: string) => {
+        insertTemplate(html);
+        recordSnippetUse.mutate({ id });
     };
 
     const setImageWidth = (width: string | null) => {
@@ -296,7 +322,7 @@ export const NewsletterRichEditor = ({
                         {snippetRows.map((s) => (
                             <DropdownMenuItem
                                 key={s.id}
-                                onSelect={() => insertTemplate(s.html)}
+                                onSelect={() => insertSnippet(s.id, s.html)}
                                 className="flex flex-col items-start gap-0.5"
                             >
                                 <span className="font-medium">{s.name}</span>
@@ -309,6 +335,27 @@ export const NewsletterRichEditor = ({
                         ))}
                     </DropdownMenuContent>
                 </DropdownMenu>
+
+                {quickSnippets.length > 0 && (
+                    <>
+                        <Separator orientation="vertical" className="mx-1 h-8" />
+                        <span className="eyebrow text-muted-foreground">
+                            Quick
+                        </span>
+                        {quickSnippets.map((s) => (
+                            <Button
+                                key={s.id}
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                title={s.description ?? s.name}
+                                onClick={() => insertSnippet(s.id, s.html)}
+                            >
+                                {s.name}
+                            </Button>
+                        ))}
+                    </>
+                )}
 
                 <Separator orientation="vertical" className="mx-1 h-8" />
 

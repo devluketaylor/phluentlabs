@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, index } from "drizzle-orm/pg-core";
 
 // Reusable content blocks / snippet library. Editors save named chunks of HTML
 // (header, sign-off, sponsor slot, CTA, …) once and insert them into any issue
@@ -20,11 +20,18 @@ export const contentBlocks = pgTable(
         description: text("description"),
         // The HTML inserted at the cursor. Length-capped at the API layer.
         html: text("html").notNull(),
+        // Lightweight usage signal so the most-reached-for snippets can be
+        // surfaced as one-click toolbar buttons (Tier 8 quick-insert). Additive
+        // + defaulted — existing rows read 0 / null until first inserted.
+        useCount: integer("use_count").default(0).notNull(),
+        lastUsedAt: timestamp("last_used_at"),
         createdAt: timestamp("created_at").defaultNow().notNull(),
         updatedAt: timestamp("updated_at").defaultNow().notNull(),
     },
     (t) => [
         // Newest-first admin listing + menu ordering.
         index("content_block_created_at_idx").on(t.createdAt),
+        // Most-used-first ordering for the toolbar quick-insert row.
+        index("content_block_use_count_idx").on(t.useCount),
     ],
 );

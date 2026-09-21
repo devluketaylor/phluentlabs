@@ -1,6 +1,6 @@
 import { adminProcedure, editorProcedure, router } from "@/trpc/server";
 import { z } from "zod";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { contentBlocks } from "@/db/schemas/content-blocks";
 import { recordAudit } from "@/lib/audit";
 import { TRPCError } from "@trpc/server";
@@ -82,6 +82,24 @@ export const adminContentBlocksRouter = router({
                 metadata: { name: input.name },
             });
 
+            return { ok: true };
+        }),
+
+    // Bump a snippet's lightweight usage counter when it's inserted into an
+    // issue. Powers the toolbar quick-insert row (most-used first). Deliberately
+    // fire-and-forget from the editor — an insert should never block on this,
+    // and a miss just means the ordering lags by one use. admin+ so any author
+    // who can insert can record the use.
+    recordUse: adminProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .mutation(async ({ input, ctx }) => {
+            await ctx.db
+                .update(contentBlocks)
+                .set({
+                    useCount: sql`${contentBlocks.useCount} + 1`,
+                    lastUsedAt: new Date(),
+                })
+                .where(eq(contentBlocks.id, input.id));
             return { ok: true };
         }),
 
