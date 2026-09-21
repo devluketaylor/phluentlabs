@@ -4,13 +4,13 @@ import * as React from "react";
 import { z } from "zod";
 import { useForm, FormProvider, useFormContext } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { trpc } from "@/trpc/client";
 
 import { SubscribeForm } from "@/components/forms/subscribe-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Zap, Code2, Clock, Mail, ArrowRight, Quote } from "lucide-react";
+import { Zap, Code2, Clock, Mail, ArrowRight, Quote, Inbox, Check } from "lucide-react";
 import {
     Form,
     FormControl,
@@ -175,14 +175,87 @@ function ConfirmStep() {
     );
 }
 
+// In-place success panel shown after a successful subscribe submission.
+// Sets the double-opt-in expectation (check inbox → confirm) so fewer signups
+// silently drop, handles the already-subscribed case distinctly, and offers a
+// spam/didn't-get-it affordance. Referral share stays on the /confirm page,
+// where the confirm token that mints the personal link is available.
+function SubscribeSuccess({
+    email,
+    alreadySubscribed,
+}: {
+    email: string;
+    alreadySubscribed: boolean;
+}) {
+    return (
+        <div className="flex flex-col">
+            <span
+                aria-hidden
+                className="inline-flex h-11 w-11 items-center justify-center border border-border bg-background text-foreground"
+            >
+                {alreadySubscribed ? <Check className="h-5 w-5" /> : <Inbox className="h-5 w-5" />}
+            </span>
+            <h3 className="mt-4 text-2xl font-bold tracking-tight leading-tight">
+                {alreadySubscribed ? "You're already on the list." : "Almost there — check your inbox."}
+            </h3>
+            {alreadySubscribed ? (
+                <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
+                    <span className="font-medium text-foreground">{email}</span> is already
+                    subscribed. You&rsquo;ll get the next issue this Sunday — nothing else to do.
+                </p>
+            ) : (
+                <>
+                    <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
+                        We just sent a confirmation link to{" "}
+                        <span className="font-medium text-foreground">{email}</span>. Open it and
+                        click <span className="font-medium text-foreground">Confirm</span> to lock
+                        in your subscription — that&rsquo;s the last step.
+                    </p>
+                    <ol className="mt-5 space-y-3 border-t border-border pt-5 text-sm text-muted-foreground">
+                        <li className="flex gap-3">
+                            <span className="eyebrow shrink-0 text-muted-foreground">01</span>
+                            <span>Open the email from PhluentLabs.</span>
+                        </li>
+                        <li className="flex gap-3">
+                            <span className="eyebrow shrink-0 text-muted-foreground">02</span>
+                            <span>Click the confirmation link inside.</span>
+                        </li>
+                        <li className="flex gap-3">
+                            <span className="eyebrow shrink-0 text-muted-foreground">03</span>
+                            <span>Done — the next issue lands this Sunday.</span>
+                        </li>
+                    </ol>
+                    <p className="mt-5 border-t border-border pt-5 text-xs text-muted-foreground leading-relaxed">
+                        Didn&rsquo;t get it? Give it a minute, then check your{" "}
+                        <span className="font-medium text-foreground">spam</span> or{" "}
+                        <span className="font-medium text-foreground">promotions</span> folder and
+                        mark it &ldquo;not spam.&rdquo; Still nothing? Just subscribe again — a fresh
+                        link takes a few seconds.
+                    </p>
+                </>
+            )}
+        </div>
+    );
+}
+
 function HomePageInner({ featured, issueCount }: HomeProps) {
-    const router = useRouter();
     // Referral attribution: a shared link looks like /?ref=<code>. We read the
     // code here and pass it to the subscribe mutation so the referrer gets
     // credited. Unknown/blank codes are safely ignored server-side.
     const searchParams = useSearchParams();
     const ref = searchParams.get("ref")?.trim() || undefined;
     const subscribeRequest = trpc.subscribe.request.useMutation();
+
+    // In-place success state. Rather than navigating away to a bare
+    // "check your inbox" screen, we keep the subscriber on the page and swap
+    // the form for a success panel that sets the double-opt-in expectation
+    // (check inbox + confirm), handles the already-subscribed case, and
+    // surfaces a spam/didn't-get-it affordance. This keeps the highest-intent
+    // moment in-context and reduces confused drop-off.
+    const [result, setResult] = React.useState<{
+        email: string;
+        alreadySubscribed: boolean;
+    } | null>(null);
     const subscriberCount = trpc.subscribe.count.useQuery(undefined, {
         staleTime: 5 * 60 * 1000,
     });
@@ -194,13 +267,13 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
     });
 
     const onSubmit = async (data: SubscribeValues) => {
-        await subscribeRequest.mutateAsync({
+        const res = await subscribeRequest.mutateAsync({
             email: data.email,
             firstName: data.firstName,
             lastName: data.lastName,
             ref,
         });
-        router.push("/confirm");
+        setResult({ email: data.email, alreadySubscribed: res.alreadySubscribed });
     };
 
     // CLS guard: the count is fetched client-side, so treat "still loading"
@@ -444,41 +517,48 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                 )}
             </div>
             <div className="bg-card p-6 sm:p-10">
-                <FormProvider {...methods}>
-                    <Form {...methods}>
-                        <SubscribeForm<SubscribeValues>
-                            methods={methods}
-                            steps={[
-                                { name: "Email", fields: ["email"], children: <EmailStep /> },
-                                { name: "Your name", fields: ["firstName", "lastName"], children: <NameStep /> },
-                                { name: "Confirm", children: <ConfirmStep /> },
-                            ]}
-                            onSubmit={onSubmit}
-                            controls={({ isFirstStep, isLastStep, back, next, submit }) => (
-                                <div className="mt-5 flex gap-2">
-                                    {!isFirstStep && (
-                                        <Button type="button" variant="outline" onClick={back}>
-                                            Back
-                                        </Button>
-                                    )}
-                                    {!isLastStep ? (
-                                        <Button type="button" onClick={next}>
-                                            Continue
-                                        </Button>
-                                    ) : (
-                                        <Button
-                                            type="button"
-                                            onClick={submit}
-                                            disabled={subscribeRequest.isPending}
-                                        >
-                                            {subscribeRequest.isPending ? "Subscribing..." : "Subscribe"}
-                                        </Button>
-                                    )}
-                                </div>
-                            )}
-                        />
-                    </Form>
-                </FormProvider>
+                {result ? (
+                    <SubscribeSuccess
+                        email={result.email}
+                        alreadySubscribed={result.alreadySubscribed}
+                    />
+                ) : (
+                    <FormProvider {...methods}>
+                        <Form {...methods}>
+                            <SubscribeForm<SubscribeValues>
+                                methods={methods}
+                                steps={[
+                                    { name: "Email", fields: ["email"], children: <EmailStep /> },
+                                    { name: "Your name", fields: ["firstName", "lastName"], children: <NameStep /> },
+                                    { name: "Confirm", children: <ConfirmStep /> },
+                                ]}
+                                onSubmit={onSubmit}
+                                controls={({ isFirstStep, isLastStep, back, next, submit }) => (
+                                    <div className="mt-5 flex gap-2">
+                                        {!isFirstStep && (
+                                            <Button type="button" variant="outline" onClick={back}>
+                                                Back
+                                            </Button>
+                                        )}
+                                        {!isLastStep ? (
+                                            <Button type="button" onClick={next}>
+                                                Continue
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                type="button"
+                                                onClick={submit}
+                                                disabled={subscribeRequest.isPending}
+                                            >
+                                                {subscribeRequest.isPending ? "Subscribing..." : "Subscribe"}
+                                            </Button>
+                                        )}
+                                    </div>
+                                )}
+                            />
+                        </Form>
+                    </FormProvider>
+                )}
             </div>
             </div>
             </section>
