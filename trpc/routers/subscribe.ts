@@ -64,6 +64,14 @@ export const sendWelcomeEmail = async (
     });
 }
 
+// In-memory per-email cooldown for the public resend-confirmation endpoint.
+// Prevents someone from spamming a subscriber's inbox by hammering the resend
+// button. Best-effort (per server instance) — combined with the pending-only
+// gate + double opt-in this is plenty for the abuse surface it guards. A
+// serverless cold start simply resets the window, which is acceptable here.
+const RESEND_COOLDOWN_MS = 60_000;
+const lastResendAt = new Map<string, number>();
+
 export const subscribeRouter = router({
         // Public: live count of confirmed subscribers for social proof on the
         // homepage. Only counts status = "subscribed" (not pending/unsubscribed).
@@ -98,6 +106,86 @@ export const subscribeRouter = router({
                     lastName: input.lastName,
                     ref: input.ref,
                 });
+            }),
+
+        // Public: re-send the double opt-in confirmation email to a PENDING
+        // subscriber who never confirmed (or lost the original). Deliberately
+        // narrow + safe:
+        //   - Only re-sends for a row that is currently `pending`. An already
+        //     `subscribed`/`unsubscribed`/unknown email returns a generic ok
+        //     with `sent: false` and NO email — so this can't be used to probe
+        //     which addresses are on the list, and never re-mails a confirmed
+        //     or opted-out person.
+        //   - Per-email cooldown (in-memory) so the button can't be used to
+        //     flood an inbox.
+        //   - Mints a FRESH confirm token + unsub token (same as the initial
+        //     signup path) and reuses the branded confirm email template.
+        // Powers the homepage "didn't get it? resend" affordance.
+        resendConfirmation: publicProcedure
+            .input(z.object({ email: z.string().email() }))
+            .mutation(async ({ input, ctx }) => {
+                const email = input.email.trim().toLowerCase();
+
+                // Cooldown gate (best-effort, per instance).
+                const now = Date.now();
+                const prev = lastResendAt.get(email);
+                if (prev && now - prev < RESEND_COOLDOWN_MS) {
+                    // Silently succeed without re-sending; tell the client to
+                    // wait so it can show a friendly message.
+                    return { ok: true as const, sent: false, cooldown: true };
+                }
+
+                const [me] = await ctx.db
+                    .select({
+                        id: subscribers.id,
+                        email: subscribers.email,
+                        status: subscribers.status,
+                    })
+                    .from(subscribers)
+                    .where(eq(subscribers.email, email));
+
+                // Only pending rows get a re-send. Everything else (missing,
+                // subscribed, paused, unsubscribed, suppressed) returns a
+                // generic non-committal ok so we never leak membership status.
+                if (!me || me.status !== "pending") {
+                    return { ok: true as const, sent: false, cooldown: false };
+                }
+
+                const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+                if (!appUrl) {
+                    return { ok: true as const, sent: false, cooldown: false };
+                }
+
+                const confirmToken = await signSubscriberToken({
+                    subId: me.id,
+                    email: me.email,
+                    scope: "confirm",
+                });
+                const confirmUrl = new URL("/confirm", appUrl);
+                confirmUrl.searchParams.set("token", confirmToken);
+
+                const unsubToken = await signSubscriberToken({
+                    subId: me.id,
+                    email: me.email,
+                    scope: "unsub",
+                });
+                const unsubscribeUrl = new URL("/unsubscribe", appUrl);
+                unsubscribeUrl.searchParams.set("token", unsubToken);
+
+                try {
+                    await sendConfirmEmail(
+                        me.email,
+                        confirmUrl.toString(),
+                        unsubscribeUrl.toString(),
+                    );
+                    lastResendAt.set(email, now);
+                    return { ok: true as const, sent: true, cooldown: false };
+                } catch (err) {
+                    console.error("resend confirm email failed", err);
+                    // Don't leak the failure detail; the UI will just prompt a
+                    // retry / spam-folder check.
+                    return { ok: true as const, sent: false, cooldown: false };
+                }
             }),
 
         confirm: publicProcedure

@@ -197,6 +197,27 @@ function SubscribeSuccess({
     email: string;
     alreadySubscribed: boolean;
 }) {
+    // One-click resend of the confirmation email for the pending case. Backed
+    // by the public, pending-only, rate-limited `subscribe.resendConfirmation`
+    // endpoint. We show one of three post-click states: sent (fresh link on the
+    // way), cooldown (asked again too soon), or a neutral "check spam" nudge if
+    // the server didn't send (e.g. already confirmed / unknown — never leaked).
+    const resend = trpc.subscribe.resendConfirmation.useMutation();
+    const [resendState, setResendState] = React.useState<
+        "idle" | "sent" | "cooldown" | "noop"
+    >("idle");
+
+    const onResend = async () => {
+        try {
+            const res = await resend.mutateAsync({ email });
+            if (res.sent) setResendState("sent");
+            else if (res.cooldown) setResendState("cooldown");
+            else setResendState("noop");
+        } catch {
+            setResendState("noop");
+        }
+    };
+
     return (
         <div className="flex flex-col">
             <span
@@ -235,13 +256,47 @@ function SubscribeSuccess({
                             <span>Done — the next issue lands this Sunday.</span>
                         </li>
                     </ol>
-                    <p className="mt-5 border-t border-border pt-5 text-xs text-muted-foreground leading-relaxed">
-                        Didn&rsquo;t get it? Give it a minute, then check your{" "}
-                        <span className="font-medium text-foreground">spam</span> or{" "}
-                        <span className="font-medium text-foreground">promotions</span> folder and
-                        mark it &ldquo;not spam.&rdquo; Still nothing? Just subscribe again — a fresh
-                        link takes a few seconds.
-                    </p>
+                    <div className="mt-5 border-t border-border pt-5">
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                            Didn&rsquo;t get it? Give it a minute, then check your{" "}
+                            <span className="font-medium text-foreground">spam</span> or{" "}
+                            <span className="font-medium text-foreground">promotions</span> folder
+                            and mark it &ldquo;not spam.&rdquo; Still nothing? Send it again:
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={onResend}
+                                disabled={resend.isPending || resendState === "sent"}
+                                className="gap-2"
+                            >
+                                {resend.isPending
+                                    ? "Sending\u2026"
+                                    : resendState === "sent"
+                                      ? "Sent \u2713"
+                                      : "Resend confirmation email"}
+                            </Button>
+                            {resendState === "sent" && (
+                                <span className="text-xs text-muted-foreground">
+                                    A fresh link is on its way to{" "}
+                                    <span className="font-medium text-foreground">{email}</span>.
+                                </span>
+                            )}
+                            {resendState === "cooldown" && (
+                                <span className="text-xs text-muted-foreground">
+                                    Just sent one — give it a minute before trying again.
+                                </span>
+                            )}
+                            {resendState === "noop" && (
+                                <span className="text-xs text-muted-foreground">
+                                    If that address is waiting to confirm, a new link is on the
+                                    way — otherwise check your spam folder.
+                                </span>
+                            )}
+                        </div>
+                    </div>
                 </>
             )}
         </div>
