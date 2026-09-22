@@ -192,6 +192,31 @@ export const SubscribersTable = () => {
         onError: (err) => toast.error(err.message || "Bulk delete failed"),
     });
 
+    // Summarizes a resend-confirmation result into a single friendly toast:
+    // reports how many confirmation emails actually went out, plus any that
+    // were skipped (not pending) or failed to send.
+    const resendToast = (res: { sent: number; failed: number; skipped: number }) => {
+        const bits: string[] = [];
+        bits.push(`${res.sent} confirmation email${res.sent === 1 ? "" : "s"} resent`);
+        if (res.skipped > 0) bits.push(`${res.skipped} skipped (not pending)`);
+        if (res.failed > 0) bits.push(`${res.failed} failed`);
+        if (res.sent > 0) toast.success(bits.join(" · "));
+        else toast.error(bits.join(" · ") || "Nothing to resend");
+    };
+
+    const resendConfirmation = trpc.adminSubscribers.resendConfirmation.useMutation({
+        onSuccess: (res) => resendToast(res),
+        onError: (err) => toast.error(err.message || "Resend failed"),
+    });
+
+    const bulkResendConfirmation = trpc.adminSubscribers.resendConfirmation.useMutation({
+        onSuccess: (res) => {
+            resendToast(res);
+            clearSelection();
+        },
+        onError: (err) => toast.error(err.message || "Resend failed"),
+    });
+
     const [bulkExporting, setBulkExporting] = useState(false);
     const handleExportSelected = async () => {
         if (selectedIds.length === 0) return;
@@ -216,7 +241,7 @@ export const SubscribersTable = () => {
         }
     };
 
-    const bulkBusy = bulkUpdateStatus.isPending || bulkDelete.isPending || bulkExporting;
+    const bulkBusy = bulkUpdateStatus.isPending || bulkDelete.isPending || bulkExporting || bulkResendConfirmation.isPending;
 
         return (
         <div className="space-y-4">
@@ -304,6 +329,15 @@ export const SubscribersTable = () => {
                     {bulkExporting ? "Exporting…" : "Export selected"}
                 </Button>
                 <Button
+                    variant="secondary"
+                    size="sm"
+                    title="Re-send the confirmation email to any PENDING subscribers in the selection"
+                    onClick={() => bulkResendConfirmation.mutate({ ids: selectedIds })}
+                    disabled={bulkBusy}
+                >
+                    {bulkResendConfirmation.isPending ? "Resending…" : "Resend confirmation"}
+                </Button>
+                <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => bulkDelete.mutate({ ids: selectedIds })}
@@ -384,6 +418,17 @@ export const SubscribersTable = () => {
                                     onSave={(next) => update.mutate(next)}
                                     saving={update.isPending}
                                 />
+                                {s.status === "pending" && (
+                                    <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        title="Re-send the confirmation email to this pending subscriber"
+                                        onClick={() => resendConfirmation.mutate({ ids: [s.id] })}
+                                        disabled={resendConfirmation.isPending}
+                                    >
+                                        Resend
+                                    </Button>
+                                )}
                                 <Button
                                     variant="destructive"
                                     size="sm"

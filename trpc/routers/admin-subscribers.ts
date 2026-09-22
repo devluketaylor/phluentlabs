@@ -5,6 +5,8 @@ import {subscribers} from "@/db/schemas/subscribers";
 import {newsletterRecipients} from "@/db/schemas/newsletter-recipients";
 import {newsletters} from "@/db/schemas/newsletters";
 import {recordAudit} from "@/lib/audit";
+import {signSubscriberToken} from "@/lib/subscriber-token";
+import {sendConfirmEmail} from "@/trpc/routers/subscribe";
 
 // Normalize a raw tag list: trim, drop empties, dedupe case-insensitively
 // (keeping first-seen casing), preserve order.
@@ -670,6 +672,80 @@ export const adminSubscribersRouter = router({
                 targetId: input.id,
             });
             return { ok: true }
+        }),
+
+    // Admin-authed re-send of the double opt-in confirmation email to one or
+    // more PENDING subscribers. Unlike the public `subscribe.resendConfirmation`
+    // this is behind admin auth, so there's no enumeration/leak concern and no
+    // per-email cooldown — it lets an admin deliberately nudge a stuck signup.
+    // Only re-mails rows that are currently `pending` (a confirmed or opted-out
+    // subscriber is never re-mailed); mints fresh confirm + unsub tokens and
+    // reuses the branded confirm-email template. Audit-logged. NO schema change.
+    resendConfirmation: editorProcedure
+        .input(z.object({ ids: z.array(z.string().min(1)).min(1).max(500) }))
+        .mutation(async ({ input, ctx }) => {
+            const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+            if (!appUrl) {
+                throw new Error("NEXT_PUBLIC_APP_URL is not configured.");
+            }
+
+            // Only load PENDING rows among the requested ids — everything else is
+            // silently skipped (already confirmed / unsubscribed / not found).
+            const rows = await ctx.db
+                .select({
+                    id: subscribers.id,
+                    email: subscribers.email,
+                    status: subscribers.status,
+                })
+                .from(subscribers)
+                .where(
+                    and(
+                        inArray(subscribers.id, input.ids),
+                        eq(subscribers.status, "pending"),
+                    ),
+                );
+
+            let sent = 0;
+            let failed = 0;
+            for (const me of rows) {
+                try {
+                    const confirmToken = await signSubscriberToken({
+                        subId: me.id,
+                        email: me.email,
+                        scope: "confirm",
+                    });
+                    const confirmUrl = new URL("/confirm", appUrl);
+                    confirmUrl.searchParams.set("token", confirmToken);
+
+                    const unsubToken = await signSubscriberToken({
+                        subId: me.id,
+                        email: me.email,
+                        scope: "unsub",
+                    });
+                    const unsubscribeUrl = new URL("/unsubscribe", appUrl);
+                    unsubscribeUrl.searchParams.set("token", unsubToken);
+
+                    await sendConfirmEmail(
+                        me.email,
+                        confirmUrl.toString(),
+                        unsubscribeUrl.toString(),
+                    );
+                    sent++;
+                } catch (err) {
+                    console.error("admin resend confirm email failed", me.email, err);
+                    failed++;
+                }
+            }
+
+            const skipped = input.ids.length - rows.length;
+            await recordAudit(ctx, {
+                action: "subscriber.resendConfirmation",
+                targetType: "subscriber",
+                ...(input.ids.length === 1 ? { targetId: input.ids[0] } : {}),
+                metadata: { requested: input.ids.length, sent, failed, skipped },
+            });
+
+            return { ok: true as const, sent, failed, skipped };
         }),
 
     bulkUpdateStatus: editorProcedure
