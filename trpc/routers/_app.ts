@@ -10,6 +10,8 @@ import { adminPublicationsRouter } from "@/trpc/routers/admin-publications";
 import { adminContentBlocksRouter } from "@/trpc/routers/admin-content-blocks";
 import { ideaLabRouter } from "@/trpc/routers/idea-lab";
 import { usageRouter } from "@/trpc/routers/usage";
+import { adminPortfolioRouter } from "@/trpc/routers/admin-portfolio";
+import { portfolioPublicRouter } from "@/trpc/routers/portfolio-public";
 
 export const appRouter = router({
     subscribe: subscribeRouter,
@@ -24,6 +26,8 @@ export const appRouter = router({
     ideaLab: ideaLabRouter,
     usage: usageRouter,
     newsletter: newsletterRouter,
+    adminPortfolio: adminPortfolioRouter,
+    portfolioPublic: portfolioPublicRouter,
 });
 
 export type AppRouter = typeof appRouter;
