@@ -31,6 +31,13 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const newsletterStatus = z.enum(["draft", "scheduled", "sent"]);
 
 export const adminNewsletterRouter = router({
+    // Lightweight identity echo so the editor UI can prefill "send a test to
+    // myself" with the logged-in admin's own email (Tier 11 #3). Returns only
+    // the actor's email — nothing sensitive.
+    whoami: adminProcedure.query(({ ctx }) => {
+        return { email: ctx.adminEmail ?? null };
+    }),
+
     list: adminProcedure
         .input(
             z.object({

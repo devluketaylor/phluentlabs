@@ -33,7 +33,7 @@ import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor"
 import { IssueLintPanel } from "@/components/admin/issue-lint-panel";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
-import { BarChart3, Link2, Check, Copy } from "lucide-react";
+import { BarChart3, Link2, Check, Copy, UserRound } from "lucide-react";
 
 type NewsletterStatus = "draft" | "scheduled" | "sent";
 
@@ -581,17 +581,33 @@ function TestSendDialog({
 }) {
     const [open, setOpen] = useState(false);
     const [to, setTo] = useState("");
+    const [touched, setTouched] = useState(false);
     const [sending, setSending] = useState(false);
     const [result, setResult] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [lastTestedAt, setLastTestedAt] = useState<Date | null>(null);
 
-    const handleSend = async () => {
+    // Prefill the logged-in admin's own email so "send a test to myself" is
+    // one click (Tier 11 #3). Only load once the dialog is opened.
+    const me = trpc.adminNewsletter.whoami.useQuery(undefined, { enabled: open });
+    const myEmail = me.data?.email ?? null;
+
+    // Prefill the input with my email once it loads, unless the admin has
+    // already typed something.
+    useEffect(() => {
+        if (open && myEmail && !touched && to === "") {
+            setTo(myEmail);
+        }
+    }, [open, myEmail, touched, to]);
+
+    const doSend = async (address: string) => {
         setSending(true);
         setError(null);
         setResult(null);
         try {
-            await onSendTest(to);
-            setResult(`Test sent to ${to}`);
+            await onSendTest(address);
+            setResult(`Test sent to ${address}`);
+            setLastTestedAt(new Date());
         } catch (e) {
             setError(e instanceof Error ? e.message : "Failed to send test");
         } finally {
@@ -613,19 +629,38 @@ function TestSendDialog({
                     <span className="font-medium text-foreground">&ldquo;{newsletter.subject}&rdquo;</span>{" "}
                     to an address you choose. Subscribers are not affected.
                 </p>
+                {myEmail && (
+                    <Button
+                        variant="secondary"
+                        className="w-full"
+                        disabled={sending}
+                        onClick={() => doSend(myEmail)}
+                    >
+                        <UserRound className="size-4" />
+                        {sending ? "Sending…" : `Send test to me (${myEmail})`}
+                    </Button>
+                )}
                 <Input
                     type="email"
                     placeholder="you@example.com"
                     value={to}
-                    onChange={(e) => setTo(e.target.value)}
+                    onChange={(e) => {
+                        setTouched(true);
+                        setTo(e.target.value);
+                    }}
                 />
+                {lastTestedAt && !result && (
+                    <p className="text-xs text-muted-foreground">
+                        Last tested {lastTestedAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                )}
                 {result && <p className="text-sm text-green-600 dark:text-green-400">{result}</p>}
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 <DialogFooter>
                     <Button variant="secondary" onClick={() => setOpen(false)} disabled={sending}>
                         Close
                     </Button>
-                    <Button disabled={sending || !to.includes("@")} onClick={handleSend}>
+                    <Button disabled={sending || !to.includes("@")} onClick={() => doSend(to)}>
                         {sending ? "Sending…" : "Send test"}
                     </Button>
                 </DialogFooter>
