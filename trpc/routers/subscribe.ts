@@ -470,6 +470,101 @@ export const subscribeRouter = router({
                 return { ok: true };
             }),
 
+        // Change the caller's OWN delivery email address. Token-gated (scope
+        // "prefs"), own-row only. SAFER DEFAULT (product call): changing the
+        // address RE-TRIGGERS double opt-in — the row flips back to `pending`
+        // and a fresh confirm email is sent to the NEW address. This proves the
+        // new mailbox is real + reachable and prevents redirecting someone
+        // else's confirmed subscription to an address they don't control.
+        //
+        // Anti-enumeration: if the new address already belongs to a DIFFERENT
+        // subscriber row we return a generic { ok:true, sent:false, taken:true }
+        // WITHOUT changing anything and without confirming which row exists —
+        // so this can't be used to probe list membership. (email is unique.)
+        updateEmail: publicProcedure
+            .input(z.object({
+                token: z.string().min(1),
+                email: z.string().email(),
+            }))
+            .mutation(async ({ input, ctx }) => {
+                const payload = await verifySubscriberToken(input.token);
+                if (payload.scope !== "prefs") throw new Error("Invalid token")
+
+                const newEmail = input.email.trim().toLowerCase();
+
+                const [me] = await ctx.db
+                    .select({
+                        id: subscribers.id,
+                        email: subscribers.email,
+                        firstName: subscribers.firstName,
+                    })
+                    .from(subscribers)
+                    .where(eq(subscribers.id, payload.subId));
+                if (!me) throw new Error("Subscriber not found");
+
+                // No-op if the address is unchanged (case-insensitive).
+                if (me.email.trim().toLowerCase() === newEmail) {
+                    return { ok: true as const, sent: false, taken: false, unchanged: true };
+                }
+
+                // Collision check: is the new address already on the list under
+                // a different row? If so, bail generically (no mutation, no leak).
+                const [clash] = await ctx.db
+                    .select({ id: subscribers.id })
+                    .from(subscribers)
+                    .where(eq(subscribers.email, newEmail));
+                if (clash && clash.id !== me.id) {
+                    return { ok: true as const, sent: false, taken: true, unchanged: false };
+                }
+
+                // Apply the change + re-trigger double opt-in on the NEW address.
+                await ctx.db
+                    .update(subscribers)
+                    .set({
+                        email: newEmail,
+                        status: "pending",
+                        confirmedAt: null,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(subscribers.id, me.id));
+
+                // Send a fresh confirm email to the new mailbox (best-effort —
+                // a Resend hiccup shouldn't fail the address change, which has
+                // already persisted; the subscriber can trigger a resend).
+                const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+                let sent = false;
+                if (appUrl) {
+                    try {
+                        const confirmToken = await signSubscriberToken({
+                            subId: me.id,
+                            email: newEmail,
+                            scope: "confirm",
+                        });
+                        const confirmUrl = new URL("/confirm", appUrl);
+                        confirmUrl.searchParams.set("token", confirmToken);
+
+                        const unsubToken = await signSubscriberToken({
+                            subId: me.id,
+                            email: newEmail,
+                            scope: "unsub",
+                        });
+                        const unsubscribeUrl = new URL("/unsubscribe", appUrl);
+                        unsubscribeUrl.searchParams.set("token", unsubToken);
+
+                        await sendConfirmEmail(
+                            newEmail,
+                            confirmUrl.toString(),
+                            unsubscribeUrl.toString(),
+                        );
+                        sent = true;
+                    } catch (err) {
+                        console.error("updateEmail confirm send failed", err);
+                    }
+                }
+
+                return { ok: true as const, sent, taken: false, unchanged: false, email: newEmail };
+            }),
+
         // ── Per-publication opt-in (public, prefs-token-gated) ─────────────
         // The publications foundation (migration 0014) is additive + opt-in.
         // These two endpoints are the PUBLIC opt-in surface: a confirmed

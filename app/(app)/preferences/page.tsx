@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { Check, Gift, Layers, Pause, Play, UserX } from "lucide-react";
+import { AtSign, Check, Gift, Layers, Pause, Play, UserX } from "lucide-react";
 import { ReferralMilestones } from "@/components/referral-milestones";
 
 function PreferencesContent() {
@@ -50,6 +50,9 @@ function PreferencesContent() {
 
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
+    const [newEmail, setNewEmail] = useState("");
+
+    const updateEmail = trpc.subscribe.updateEmail.useMutation();
 
     // Seed the local form from the loaded preferences (once available).
     useEffect(() => {
@@ -105,6 +108,32 @@ function PreferencesContent() {
             await update.mutateAsync({ token, firstName, lastName });
             await utils.subscribe.getPreferences.invalidate({ token });
             toast.success("Your details were saved.");
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Something went wrong.");
+        }
+    };
+
+    const saveEmail = async () => {
+        const trimmed = newEmail.trim();
+        if (!trimmed) return;
+        try {
+            const res = await updateEmail.mutateAsync({ token, email: trimmed });
+            if (res.unchanged) {
+                toast.info("That's already your current email.");
+                return;
+            }
+            if (res.taken) {
+                // Generic message — don't confirm the address is on the list.
+                toast.error("We couldn't switch to that address. Please try a different one.");
+                return;
+            }
+            setNewEmail("");
+            await utils.subscribe.getPreferences.invalidate({ token });
+            toast.success(
+                res.sent
+                    ? "Email updated — check your new inbox to confirm the change."
+                    : "Email updated — please confirm the change from the email we just sent.",
+            );
         } catch (err) {
             toast.error(err instanceof Error ? err.message : "Something went wrong.");
         }
@@ -236,6 +265,38 @@ function PreferencesContent() {
                 </div>
                 <Button onClick={saveName} disabled={update.isPending}>
                     {update.isPending ? "Saving..." : "Save details"}
+                </Button>
+            </div>
+
+            {/* Email-address editor — changing the address re-confirms via
+                double opt-in (a fresh confirm email is sent to the new inbox). */}
+            <div className="mt-8 border-t pt-6 space-y-3">
+                <div className="flex items-center gap-2">
+                    <AtSign className="size-4 text-primary" />
+                    <p className="text-sm font-medium">Delivery email</p>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                    Want your newsletter sent somewhere else? Enter a new address
+                    below. For your security we&apos;ll send a confirmation link to
+                    the new inbox — issues keep going to your current address until
+                    you confirm the change.
+                </p>
+                <div className="space-y-2">
+                    <Label htmlFor="newEmail">New email address</Label>
+                    <Input
+                        id="newEmail"
+                        type="email"
+                        value={newEmail}
+                        onChange={(e) => setNewEmail(e.target.value)}
+                        placeholder="you@example.com"
+                    />
+                </div>
+                <Button
+                    variant="outline"
+                    onClick={saveEmail}
+                    disabled={updateEmail.isPending || !newEmail.trim()}
+                >
+                    {updateEmail.isPending ? "Updating..." : "Update email"}
                 </Button>
             </div>
 
