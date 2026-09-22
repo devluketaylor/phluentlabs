@@ -820,6 +820,80 @@ export const adminDashboardRouter = router({
             };
         }),
 
+    // ── Pending-signup funnel (compact dashboard widget) ──────────────────
+    // Lean read-only rollup of the confirm funnel for a small dashboard card:
+    // how many pending signups exist, how many confirmed in the last 7 days,
+    // the confirm rate, and how many pending rows are past the reminder
+    // window (stale = already reminded + older than the max-age cutoff). No
+    // sample rows here (the full list-health page owns the drill-down); this
+    // is just the at-a-glance numbers. Never mutates.
+    pendingFunnel: adminProcedure.query(async ({ ctx }) => {
+        const now = Date.now();
+        const daysAgo = (d: number) =>
+            new Date(now - d * 24 * 60 * 60 * 1000);
+        const weekAgo = daysAgo(7);
+        const staleCutoff = daysAgo(REMINDER_MAX_AGE_DAYS);
+
+        const [pendingRow, confirmedWeekRow, subscribedRow, stalePendingRow] =
+            await Promise.all([
+                // Currently pending (never confirmed yet).
+                ctx.db
+                    .select({ c: count() })
+                    .from(subscribers)
+                    .where(eq(subscribers.status, "pending")),
+                // Confirmed this week — subscribers who reached "subscribed"
+                // status and whose confirmedAt landed in the last 7 days.
+                ctx.db
+                    .select({ c: count() })
+                    .from(subscribers)
+                    .where(
+                        and(
+                            eq(subscribers.status, "subscribed"),
+                            isNotNull(subscribers.confirmedAt),
+                            gte(subscribers.confirmedAt, weekAgo),
+                        ),
+                    ),
+                // Total subscribed (for an all-time confirm-rate denominator).
+                ctx.db
+                    .select({ c: count() })
+                    .from(subscribers)
+                    .where(eq(subscribers.status, "subscribed")),
+                // Stale pending: already reminded + past the max-age window.
+                ctx.db
+                    .select({ c: count() })
+                    .from(subscribers)
+                    .where(
+                        and(
+                            eq(subscribers.status, "pending"),
+                            isNotNull(subscribers.confirmReminderSentAt),
+                            lte(subscribers.createdAt, staleCutoff),
+                        ),
+                    ),
+            ]);
+
+        const pending = pendingRow[0]?.c ?? 0;
+        const confirmedThisWeek = confirmedWeekRow[0]?.c ?? 0;
+        const subscribed = subscribedRow[0]?.c ?? 0;
+        const stalePending = stalePendingRow[0]?.c ?? 0;
+
+        // Confirm rate = confirmed / (confirmed + still-pending). Signals how
+        // much of the funnel converts once someone signs up.
+        const funnelTotal = subscribed + pending;
+        const confirmRate =
+            funnelTotal > 0
+                ? Math.round((subscribed / funnelTotal) * 100)
+                : null;
+
+        return {
+            pending,
+            confirmedThisWeek,
+            subscribed,
+            stalePending,
+            confirmRate,
+            reminderMaxAgeDays: REMINDER_MAX_AGE_DAYS,
+        };
+    }),
+
     // ── Double opt-in health (pending-cleanup surface) ────────────────────
     // Read-only view of the pending-subscriber funnel for list hygiene: how
     // many pending subscribers exist, how many are eligible for the one-time

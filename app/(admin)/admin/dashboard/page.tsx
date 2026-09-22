@@ -21,6 +21,7 @@ import {
     BellRing,
     CheckCircle2,
     ArrowRight,
+    UserCheck,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -82,6 +83,10 @@ export default function DashboardPage() {
     });
 
     const attention = trpc.adminDashboard.needsAttention.useQuery(undefined, {
+        refetchOnWindowFocus: false,
+    });
+
+    const funnel = trpc.adminDashboard.pendingFunnel.useQuery(undefined, {
         refetchOnWindowFocus: false,
     });
 
@@ -229,6 +234,81 @@ export default function DashboardPage() {
                     </>
                 )}
             </div>
+
+            {/* Pending-signup funnel — confirm-funnel at a glance */}
+            <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <UserCheck className="size-4 text-primary" />
+                        Confirm funnel
+                    </CardTitle>
+                    <Link
+                        href="/admin/list-health"
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                        List health
+                        <ArrowRight className="size-3.5" />
+                    </Link>
+                </CardHeader>
+                <CardContent>
+                    {funnel.isLoading || !funnel.data ? (
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            {Array.from({ length: 4 }).map((_, i) => (
+                                <Skeleton key={i} className="h-16 w-full" />
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                            <div className="border border-border p-3">
+                                <p className="text-xs text-muted-foreground">
+                                    Pending
+                                </p>
+                                <p className="mt-1 text-2xl font-semibold">
+                                    {funnel.data.pending.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    awaiting confirmation
+                                </p>
+                            </div>
+                            <div className="border border-border p-3">
+                                <p className="text-xs text-muted-foreground">
+                                    Confirmed this week
+                                </p>
+                                <p className="mt-1 text-2xl font-semibold">
+                                    {funnel.data.confirmedThisWeek.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    last 7 days
+                                </p>
+                            </div>
+                            <div className="border border-border p-3">
+                                <p className="text-xs text-muted-foreground">
+                                    Confirm rate
+                                </p>
+                                <p className="mt-1 text-2xl font-semibold">
+                                    {funnel.data.confirmRate === null
+                                        ? "—"
+                                        : `${funnel.data.confirmRate}%`}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    confirmed of signups
+                                </p>
+                            </div>
+                            <div className="border border-border p-3">
+                                <p className="text-xs text-muted-foreground">
+                                    Stale pending
+                                </p>
+                                <p className="mt-1 text-2xl font-semibold">
+                                    {funnel.data.stalePending.toLocaleString()}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    reminded &amp; &gt;{funnel.data.reminderMaxAgeDays}d old
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
 
             <div className="grid gap-4 lg:grid-cols-2">
                 {/* Status breakdown */}
