@@ -30,7 +30,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
-import { IssueLintPanel } from "@/components/admin/issue-lint-panel";
+import { IssueLintPanel, SendReadinessChecklist } from "@/components/admin/issue-lint-panel";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
 import { BarChart3, Link2, Check, Copy, UserRound } from "lucide-react";
@@ -197,7 +197,7 @@ export function NewslettersTable() {
                                         />
                                         {n.status !== "sent" && (
                                             <ScheduleDialog
-                                                newsletter={{ subject: n.subject, subjectB: n.subjectB ?? null, status: n.status, scheduledAt: n.scheduledAt }}
+                                                newsletter={{ subject: n.subject, subjectB: n.subjectB ?? null, status: n.status, scheduledAt: n.scheduledAt, preheader: n.preheader ?? null, html: n.html }}
                                                 onSchedule={(scheduledAt) =>
                                                     schedule.mutateAsync({ id: n.id, scheduledAt })
                                                 }
@@ -205,7 +205,7 @@ export function NewslettersTable() {
                                         )}
                                         {n.status !== "sent" && (
                                             <SendNewsletterDialog
-                                                newsletter={{ id: n.id, subject: n.subject, subjectB: n.subjectB ?? null }}
+                                                newsletter={{ id: n.id, subject: n.subject, subjectB: n.subjectB ?? null, preheader: n.preheader ?? null, html: n.html }}
                                                 onSend={({ tag, cohort }) => send.mutate({ id: n.id, tag, cohort })}
                                                 sending={send.isPending}
                                                 error={send.error?.message}
@@ -296,7 +296,7 @@ function ScheduleDialog({
     newsletter,
     onSchedule,
 }: {
-    newsletter: { subject: string; subjectB?: string | null; status: string; scheduledAt?: Date | string | null };
+    newsletter: { subject: string; subjectB?: string | null; status: string; scheduledAt?: Date | string | null; preheader?: string | null; html: string };
     onSchedule: (scheduledAt: string | null) => Promise<unknown>;
 }) {
     const [open, setOpen] = useState(false);
@@ -366,6 +366,13 @@ function ScheduleDialog({
                         — consider sending then.
                     </p>
                 )}
+                <SendReadinessChecklist
+                    subject={newsletter.subject}
+                    preheader={newsletter.preheader}
+                    html={newsletter.html}
+                    recipientCount={preview.data?.count}
+                    audienceLoading={preview.isFetching}
+                />
                 <ConfirmationSummary
                     subject={newsletter.subject}
                     subjectB={newsletter.subjectB}
@@ -749,7 +756,7 @@ function SendNewsletterDialog({
     sending,
     error,
 }: {
-    newsletter: { id: string; subject: string; subjectB?: string | null };
+    newsletter: { id: string; subject: string; subjectB?: string | null; preheader?: string | null; html: string };
     onSend: (audience: { tag: string | null; cohort: "atRisk" | "dormant" | null }) => void;
     sending: boolean;
     error?: string;
@@ -846,6 +853,14 @@ function SendNewsletterDialog({
                         </p>
                     )}
                 </div>
+
+                <SendReadinessChecklist
+                    subject={newsletter.subject}
+                    preheader={newsletter.preheader}
+                    html={newsletter.html}
+                    recipientCount={targetCount}
+                    audienceLoading={preview.isFetching}
+                />
 
                 <ConfirmationSummary
                     subject={newsletter.subject}
