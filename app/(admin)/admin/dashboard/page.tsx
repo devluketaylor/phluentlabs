@@ -18,6 +18,9 @@ import {
     AlertTriangle,
     BarChart3,
     Eye,
+    BellRing,
+    CheckCircle2,
+    ArrowRight,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -78,6 +81,10 @@ export default function DashboardPage() {
         refetchOnWindowFocus: false,
     });
 
+    const attention = trpc.adminDashboard.needsAttention.useQuery(undefined, {
+        refetchOnWindowFocus: false,
+    });
+
     return (
         <div className="max-w-5xl mx-auto pt-8 pb-16 px-4 space-y-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -103,6 +110,57 @@ export default function DashboardPage() {
                     </CardContent>
                 </Card>
             )}
+
+            {/* Needs-attention digest — top-of-dashboard actionable rollup */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <BellRing className="size-4 text-primary" />
+                        Needs attention
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {attention.isLoading || !attention.data ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-10 w-full" />
+                            <Skeleton className="h-10 w-2/3" />
+                        </div>
+                    ) : attention.data.allClear ? (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <CheckCircle2 className="size-4 text-primary" />
+                            All clear — nothing needs your attention right now.
+                        </div>
+                    ) : (
+                        <ul className="grid gap-2 sm:grid-cols-2">
+                            {attention.data.items.map((item) => (
+                                <li key={item.key}>
+                                    <Link
+                                        href={item.href}
+                                        className="group flex items-center justify-between gap-3 border border-border px-3 py-2.5 transition-colors hover:bg-muted"
+                                    >
+                                        <div className="flex min-w-0 items-center gap-3">
+                                            {item.severity === "warning" ? (
+                                                <AlertTriangle className="size-4 shrink-0 text-primary" />
+                                            ) : (
+                                                <BellRing className="size-4 shrink-0 text-muted-foreground" />
+                                            )}
+                                            <span className="min-w-0 text-sm">
+                                                <span className="font-semibold">
+                                                    {item.count.toLocaleString()}
+                                                </span>{" "}
+                                                <span className="text-muted-foreground">
+                                                    {item.label}
+                                                </span>
+                                            </span>
+                                        </div>
+                                        <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </CardContent>
+            </Card>
 
             {/* Headline stat cards */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

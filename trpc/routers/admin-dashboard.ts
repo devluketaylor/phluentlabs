@@ -156,6 +156,164 @@ export const adminDashboardRouter = router({
         };
     }),
 
+    // ── "Needs attention" digest ──────────────────────────────────────────
+    // A single actionable rollup for the top of the dashboard: the handful of
+    // things an operator should act on right now. Read-only aggregation over
+    // existing tables (no schema). Surfaces:
+    //   - scheduled sends DUE SOON (within the next 24h) or already overdue
+    //   - stale pending subscribers (reminded already + past the max-age window)
+    //   - subscribers currently suppressed (auto-removed after bounce/complaint)
+    //   - failed send recipients across recent issues that could be retried
+    // Each item carries a count, a short label, a severity, and a href so the
+    // card can render a compact, clickable to-do list. When everything is clear
+    // the card can show an "all clear" state.
+    needsAttention: adminProcedure.query(async ({ ctx }) => {
+        const now = new Date();
+        const soon = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        const staleCutoff = new Date(
+            now.getTime() - REMINDER_MAX_AGE_DAYS * 24 * 60 * 60 * 1000,
+        );
+
+        const [
+            dueSoonRow,
+            overdueRow,
+            stalePendingRow,
+            suppressedRow,
+            failedRecipientsRow,
+        ] = await Promise.all([
+            // Scheduled issues due within the next 24h (not yet overdue).
+            ctx.db
+                .select({ c: count() })
+                .from(newsletters)
+                .where(
+                    and(
+                        eq(newsletters.status, "scheduled"),
+                        gte(newsletters.scheduledAt, now),
+                        lte(newsletters.scheduledAt, soon),
+                    ),
+                ),
+            // Scheduled issues whose send time has already passed but haven't sent.
+            ctx.db
+                .select({ c: count() })
+                .from(newsletters)
+                .where(
+                    and(
+                        eq(newsletters.status, "scheduled"),
+                        lt(newsletters.scheduledAt, now),
+                    ),
+                ),
+            // Stale pending subscribers: reminded already + past the max-age window.
+            ctx.db
+                .select({ c: count() })
+                .from(subscribers)
+                .where(
+                    and(
+                        eq(subscribers.status, "pending"),
+                        isNotNull(subscribers.confirmReminderSentAt),
+                        lte(subscribers.createdAt, staleCutoff),
+                    ),
+                ),
+            // Currently suppressed subscribers (auto-removed after bounce/complaint).
+            ctx.db
+                .select({ c: count() })
+                .from(subscribers)
+                .where(eq(subscribers.status, "suppressed")),
+            // Failed send recipients that could be retried (across all issues).
+            ctx.db
+                .select({ c: count() })
+                .from(newsletterRecipients)
+                .where(eq(newsletterRecipients.status, "failed")),
+        ]);
+
+        const dueSoon = dueSoonRow[0]?.c ?? 0;
+        const overdue = overdueRow[0]?.c ?? 0;
+        const stalePending = stalePendingRow[0]?.c ?? 0;
+        const suppressed = suppressedRow[0]?.c ?? 0;
+        const failedRecipients = failedRecipientsRow[0]?.c ?? 0;
+
+        type Severity = "warning" | "info";
+        const items: Array<{
+            key: string;
+            count: number;
+            label: string;
+            severity: Severity;
+            href: string;
+        }> = [];
+
+        if (overdue > 0) {
+            items.push({
+                key: "overdue",
+                count: overdue,
+                label:
+                    overdue === 1
+                        ? "scheduled send is overdue"
+                        : "scheduled sends are overdue",
+                severity: "warning",
+                href: "/admin/calendar",
+            });
+        }
+        if (dueSoon > 0) {
+            items.push({
+                key: "dueSoon",
+                count: dueSoon,
+                label:
+                    dueSoon === 1
+                        ? "scheduled send due within 24h"
+                        : "scheduled sends due within 24h",
+                severity: "info",
+                href: "/admin/calendar",
+            });
+        }
+        if (failedRecipients > 0) {
+            items.push({
+                key: "failedRecipients",
+                count: failedRecipients,
+                label:
+                    failedRecipients === 1
+                        ? "failed send recipient to retry"
+                        : "failed send recipients to retry",
+                severity: "warning",
+                href: "/admin/newsletters",
+            });
+        }
+        if (suppressed > 0) {
+            items.push({
+                key: "suppressed",
+                count: suppressed,
+                label:
+                    suppressed === 1
+                        ? "subscriber suppressed (bounce/complaint)"
+                        : "subscribers suppressed (bounce/complaint)",
+                severity: "info",
+                href: "/admin/list-health",
+            });
+        }
+        if (stalePending > 0) {
+            items.push({
+                key: "stalePending",
+                count: stalePending,
+                label:
+                    stalePending === 1
+                        ? "stale pending subscriber to clean up"
+                        : "stale pending subscribers to clean up",
+                severity: "info",
+                href: "/admin/list-health",
+            });
+        }
+
+        return {
+            items,
+            allClear: items.length === 0,
+            counts: {
+                dueSoon,
+                overdue,
+                stalePending,
+                suppressed,
+                failedRecipients,
+            },
+        };
+    }),
+
     // Aggregate send analytics across the most recent sent issues: overall
     // open / click / bounce rates plus per-issue rows. Powers the dashboard
     // "Send analytics" card. Read-only, admin-protected.
