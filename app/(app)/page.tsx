@@ -51,6 +51,7 @@ async function getRecentIssues() {
                 id: newsletters.id,
                 subject: newsletters.subject,
                 preheader: newsletters.preheader,
+                html: newsletters.html,
                 sentAt: newsletters.sentAt,
                 createdAt: newsletters.createdAt,
             })
@@ -68,12 +69,25 @@ export default async function HomePage() {
     const recent = await getRecentIssues();
     // The most recent published issue gets a featured showcase on the homepage.
     const featured = recent[0] ?? null;
+    // Reading time for the featured issue's sample peek — strip tags, ~220wpm
+    // (matches the per-issue public page). Computed server-side so the full
+    // HTML is only shipped once (inside the sample-peek payload below).
+    const featuredHtml = featured?.html ?? "";
+    const featuredWords = featuredHtml
+        .replace(/<[^>]*>/g, " ")
+        .split(/\s+/)
+        .filter(Boolean).length;
     const featuredData = featured
         ? {
               slug: featured.slug ?? featured.id,
               subject: featured.subject,
               preheader: featured.preheader ?? null,
               date: (featured.sentAt ?? featured.createdAt)?.toISOString() ?? null,
+              // The rendered issue body powers the on-page "See a sample" peek
+              // so a prospective subscriber can preview a real issue before
+              // handing over an email — no navigation, no subscribe required.
+              html: featuredHtml,
+              readingMinutes: Math.max(1, Math.round(featuredWords / 220)),
           }
         : null;
 

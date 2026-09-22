@@ -10,7 +10,15 @@ import { trpc } from "@/trpc/client";
 import { SubscribeForm } from "@/components/forms/subscribe-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Zap, Code2, Clock, Mail, ArrowRight, Quote, Inbox, Check } from "lucide-react";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog";
+import { Zap, Code2, Clock, Mail, ArrowRight, Quote, Inbox, Check, Eye } from "lucide-react";
 import {
     Form,
     FormControl,
@@ -34,6 +42,8 @@ type Featured = {
     subject: string;
     preheader: string | null;
     date: string | null;
+    html: string;
+    readingMinutes: number;
 } | null;
 
 type HomeProps = { featured: Featured; issueCount: number };
@@ -235,6 +245,69 @@ function SubscribeSuccess({
                 </>
             )}
         </div>
+    );
+}
+
+// "See a sample" peek — lets a prospective subscriber preview the latest real
+// issue in-place before handing over an email. Renders the issue's actual HTML
+// body inside a scrollable dialog with the same prose styling as the public
+// issue page, plus a subscribe CTA at the foot so the peek converts. Non-
+// subscribers get the full reading experience; only PUBLISHED issues are ever
+// passed in (server-side filters to status="sent"), so no drafts leak.
+function SampleIssueDialog({ featured }: { featured: NonNullable<Featured> }) {
+    return (
+        <Dialog>
+            <DialogTrigger asChild>
+                <Button variant="outline" size="lg" className="gap-2">
+                    <Eye className="h-4 w-4" /> See a sample
+                </Button>
+            </DialogTrigger>
+            <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+                <DialogHeader className="space-y-2 border-b border-border p-6">
+                    <span className="eyebrow text-muted-foreground">
+                        Sample issue{featured.date ? ` · ${formatDate(featured.date)}` : ""}
+                    </span>
+                    <DialogTitle className="text-2xl font-bold tracking-tight leading-tight">
+                        {featured.subject}
+                    </DialogTitle>
+                    {featured.preheader ? (
+                        <DialogDescription className="leading-relaxed">
+                            {featured.preheader}
+                        </DialogDescription>
+                    ) : (
+                        <DialogDescription className="sr-only">
+                            A sample of the latest PhluentLabs issue.
+                        </DialogDescription>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                        {featured.readingMinutes} min read
+                    </p>
+                </DialogHeader>
+                {/* Scrollable body — same prose treatment as /issues/[slug]. */}
+                <div className="min-h-0 flex-1 overflow-y-auto p-6">
+                    <div
+                        className="prose prose-base dark:prose-invert max-w-none prose-headings:tracking-tight prose-headings:font-semibold prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-img:rounded-xl prose-hr:border-border"
+                        dangerouslySetInnerHTML={{ __html: featured.html }}
+                    />
+                </div>
+                {/* Convert the peek — subscribe CTA + full-issue link at the foot. */}
+                <div className="flex flex-col gap-3 border-t border-border p-6 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-muted-foreground">
+                        Like it? Get the next one this Sunday.
+                    </p>
+                    <div className="flex gap-2">
+                        <a href={`/issues/${featured.slug}`}>
+                            <Button variant="outline">Open full issue</Button>
+                        </a>
+                        <a href="#subscribe">
+                            <Button className="gap-2">
+                                Subscribe free <ArrowRight className="h-4 w-4" />
+                            </Button>
+                        </a>
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -495,6 +568,13 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                             <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                         </span>
                     </a>
+                    {/* Sample peek — preview a real issue in-place before subscribing. */}
+                    <div className="mt-6 flex flex-wrap items-center gap-3">
+                        <SampleIssueDialog featured={featured} />
+                        <span className="text-sm text-muted-foreground">
+                            No email required — read a full issue first.
+                        </span>
+                    </div>
                 </section>
             )}
 
