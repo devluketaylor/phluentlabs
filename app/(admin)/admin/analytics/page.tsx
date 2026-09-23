@@ -5,8 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/trpc/client";
-import { LineChart as LineChartIcon, TrendingUp, Trophy, FlaskConical, Clock } from "lucide-react";
+import { LineChart as LineChartIcon, TrendingUp, Trophy, FlaskConical, Clock, Download } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
+import { toast } from "sonner";
 import { LineChart, BarChart, DualLineChart } from "@/components/admin/charts";
 
 function formatDate(d: Date | string | null | undefined) {
@@ -24,6 +26,34 @@ export default function AnalyticsPage() {
         trpc.adminDashboard.timeseries.useQuery(undefined, {
             refetchOnWindowFocus: false,
         });
+
+    const utils = trpc.useUtils();
+    const [exporting, setExporting] = useState(false);
+    const handleExport = async () => {
+        setExporting(true);
+        try {
+            const res = await utils.adminDashboard.exportAnalyticsCsv.fetch();
+            if (res.count === 0) {
+                toast.info("No sent issues to export yet.");
+                return;
+            }
+            const blob = new Blob([res.csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            const stamp = new Date().toISOString().slice(0, 10);
+            a.download = `issue-analytics-${stamp}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            toast.success(`Exported ${res.count} issue${res.count === 1 ? "" : "s"}`);
+        } catch (err: any) {
+            toast.error(err?.message || "Export failed");
+        } finally {
+            setExporting(false);
+        }
+    };
 
     // Show the most recent ~12 issues on the engagement timeline so labels stay
     // readable; the underlying query returns full history.
@@ -50,14 +80,23 @@ export default function AnalyticsPage() {
                     title="Analytics"
                     description="Growth and performance over time."
                 />
-                <Button
-                    variant="secondary"
-                    onClick={() => refetch()}
-                    disabled={isFetching}
-                    className="self-start sm:self-auto"
-                >
-                    {isFetching ? "Refreshing…" : "Refresh"}
-                </Button>
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <Button
+                        variant="secondary"
+                        onClick={handleExport}
+                        disabled={exporting}
+                    >
+                        <Download className="size-4" />
+                        {exporting ? "Exporting…" : "Export CSV"}
+                    </Button>
+                    <Button
+                        variant="secondary"
+                        onClick={() => refetch()}
+                        disabled={isFetching}
+                    >
+                        {isFetching ? "Refreshing…" : "Refresh"}
+                    </Button>
+                </div>
             </div>
 
             {isError && (

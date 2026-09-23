@@ -414,6 +414,90 @@ export const adminDashboardRouter = router({
         };
     }),
 
+    // Per-issue send-analytics CSV export. Read-only aggregation over ALL sent
+    // issues (not just the recent 10 that sendAnalytics surfaces) so an operator
+    // can pull the full send history into a spreadsheet — closes a gap vs
+    // Substack/beehiiv/Kit which all offer analytics export. No schema, no PII
+    // beyond the issue subject/slug the admin already sees.
+    exportAnalyticsCsv: adminProcedure.query(async ({ ctx }) => {
+        const sent = await ctx.db
+            .select({
+                id: newsletters.id,
+                slug: newsletters.slug,
+                subject: newsletters.subject,
+                sentAt: newsletters.sentAt,
+            })
+            .from(newsletters)
+            .where(eq(newsletters.status, "sent"))
+            .orderBy(desc(newsletters.sentAt));
+
+        const escape = (val: unknown) => {
+            const s = val == null ? "" : String(val);
+            return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const header = [
+            "subject", "slug", "sent_at", "recipients", "delivered",
+            "opened", "clicked", "bounced", "complained", "web_views",
+            "open_rate_pct", "click_rate_pct", "bounce_rate_pct",
+        ];
+        const lines = [header.join(",")];
+
+        if (sent.length === 0) {
+            return { csv: lines.join("\n"), count: 0 };
+        }
+
+        const ids = sent.map((n) => n.id);
+        const grouped = await ctx.db
+            .select({
+                newsletterId: newsletterRecipients.newsletterId,
+                recipients: count(),
+                delivered: count(newsletterRecipients.deliveredAt),
+                opened: count(newsletterRecipients.openedAt),
+                clicked: count(newsletterRecipients.clickedAt),
+                bounced: count(newsletterRecipients.bouncedAt),
+                complained: count(newsletterRecipients.complainedAt),
+            })
+            .from(newsletterRecipients)
+            .where(inArray(newsletterRecipients.newsletterId, ids))
+            .groupBy(newsletterRecipients.newsletterId);
+        const byId = new Map(grouped.map((g) => [g.newsletterId, g]));
+
+        const viewsGrouped = await ctx.db
+            .select({
+                newsletterId: pageViews.newsletterId,
+                views: count(),
+            })
+            .from(pageViews)
+            .where(inArray(pageViews.newsletterId, ids))
+            .groupBy(pageViews.newsletterId);
+        const viewsById = new Map(viewsGrouped.map((v) => [v.newsletterId, Number(v.views)]));
+
+        const rate = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
+
+        for (const n of sent) {
+            const g = byId.get(n.id);
+            const recipients = Number(g?.recipients ?? 0);
+            const delivered = Number(g?.delivered ?? 0);
+            const opened = Number(g?.opened ?? 0);
+            const clicked = Number(g?.clicked ?? 0);
+            const bounced = Number(g?.bounced ?? 0);
+            const complained = Number(g?.complained ?? 0);
+            const webViews = viewsById.get(n.id) ?? 0;
+            const denom = delivered > 0 ? delivered : recipients;
+            lines.push([
+                escape(n.subject),
+                escape(n.slug),
+                escape(n.sentAt instanceof Date ? n.sentAt.toISOString() : n.sentAt),
+                recipients, delivered, opened, clicked, bounced, complained, webViews,
+                rate(opened, denom),
+                rate(clicked, denom),
+                rate(bounced, recipients),
+            ].join(","));
+        }
+
+        return { csv: lines.join("\n"), count: sent.length };
+    }),
+
     // Analytics v2 — TIME-SERIES growth + performance history. Read-only
     // aggregation, no schema. Powers the dashboard "growth over time" charts:
     //   - weekly subscriber growth (net-new confirmed signups per ISO week)
