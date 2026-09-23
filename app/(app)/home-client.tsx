@@ -412,7 +412,14 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
     const countReady = subscriberCount.isSuccess;
     const n = subscriberCount.data?.count ?? 0;
     const countLabel = n >= 50 ? `${Math.floor(n / 10) * 10}+` : `${n}`;
-    const isEmpty = countReady && n <= 0;
+    // Honest social proof: only surface the LIVE subscriber count in
+    // persuasion copy ("Read alongside N", "Trusted by N") once it clears a
+    // small credibility floor. Below the floor a specific number reads as
+    // weak ("Trusted by 3") and hurts conversion, so we fall back to
+    // cadence-forward copy (free, weekly) that stands on its own. The floor
+    // is only meaningful once the count has actually resolved.
+    const SOCIAL_PROOF_FLOOR = 25;
+    const showCount = countReady && n >= SOCIAL_PROOF_FLOOR;
 
     // Rotate the testimonial slot gently client-side so the credibility band
     // feels alive without a backend. Deterministic first paint (index 0) then
@@ -490,16 +497,14 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                     {/* Fixed-height line reserves space so the async count can't
                         push the layout down when it resolves (no CLS). */}
                     <p className="mt-4 min-h-5 text-sm text-muted-foreground">
-                        {!countReady ? (
-                            "A free weekly read for developers."
-                        ) : isEmpty ? (
-                            "Be one of the first developers on the list."
-                        ) : (
+                        {showCount ? (
                             <>
                                 Read alongside{" "}
                                 <span className="font-semibold text-foreground">{countLabel}</span>{" "}
                                 other developer{n === 1 ? "" : "s"}.
                             </>
+                        ) : (
+                            "Free, every Sunday. One focused read for developers."
                         )}
                     </p>
                 </div>
@@ -541,16 +546,25 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                     {/* Metric row */}
                     <div className="grid grid-cols-3 gap-px border border-border bg-border">
                         <div className="bg-card p-5 sm:p-6">
-                            <div className="text-3xl sm:text-4xl font-bold tracking-tight">
-                                {!countReady ? "\u2014" : isEmpty ? "New" : countLabel}
-                            </div>
-                            <div className="eyebrow mt-1 text-muted-foreground">
-                                {!countReady
-                                    ? "Developers reading"
-                                    : isEmpty
-                                      ? "Just launched"
-                                      : `Developer${n === 1 ? "" : "s"} reading`}
-                            </div>
+                            {showCount ? (
+                                <>
+                                    <div className="text-3xl sm:text-4xl font-bold tracking-tight">
+                                        {countLabel}
+                                    </div>
+                                    <div className="eyebrow mt-1 text-muted-foreground">
+                                        Developer{n === 1 ? "" : "s"} reading
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="text-3xl sm:text-4xl font-bold tracking-tight">
+                                        Free
+                                    </div>
+                                    <div className="eyebrow mt-1 text-muted-foreground">
+                                        Forever, no paywall
+                                    </div>
+                                </>
+                            )}
                         </div>
                         <div className="bg-card p-5 sm:p-6">
                             <div className="text-3xl sm:text-4xl font-bold tracking-tight">
@@ -643,12 +657,16 @@ function HomePageInner({ featured, issueCount }: HomeProps) {
                     Free, every Sunday. One focused read — no drip campaigns, no spam.
                     Unsubscribe anytime, no hard feelings.
                 </p>
-                {countReady && !isEmpty && (
+                {showCount ? (
                     <p className="mt-4 text-sm text-muted-foreground">
                         Trusted by{" "}
                         <span className="font-semibold text-foreground">{countLabel}</span>{" "}
                         developer{n === 1 ? "" : "s"}.
                     </p>
+                ) : (
+                    <span className="eyebrow mt-4 inline-flex w-fit items-center gap-2 border border-border px-3 py-1 text-muted-foreground">
+                        <Mail className="h-3 w-3" /> A new issue every Sunday
+                    </span>
                 )}
             </div>
             <div className="bg-card p-6 sm:p-10">
