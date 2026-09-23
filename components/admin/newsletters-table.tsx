@@ -1018,8 +1018,53 @@ function EditNewsletterDialog({
                 ? `Saved ${lastSaved.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
                 : "";
 
+    // Unsaved-changes guard (Tier 14 #2). Autosave only protects a DRAFT's
+    // body/subject/subjectB/preheader — so a scheduled/sent issue can silently
+    // drop edits if the dialog is dismissed (backdrop/Esc/X/Cancel) without
+    // hitting Save. Compute whether the fields the explicit Save controls have
+    // diverged from the loaded issue, scoped to what autosave doesn't cover, so
+    // we only prompt when there's real unsaved work.
+    const norm = (v: string | null | undefined) => (v ?? "").trim();
+    const loadedSlug = newsletter.slug ?? "";
+    // Slug is never autosaved (even for drafts), so it's always "unprotected".
+    const slugDirty = norm(slug) !== norm(loadedSlug);
+    // For non-draft issues autosave is off entirely, so every field is at risk.
+    // For drafts, only the slug (and a status change) can be lost on close.
+    const contentDirty =
+        norm(subject) !== norm(newsletter.subject) ||
+        norm(subjectB) !== norm(newsletter.subjectB) ||
+        norm(preheader) !== norm(newsletter.preheader) ||
+        html !== newsletter.html;
+    const statusDirty = status !== (newsletter.status as NewsletterStatus);
+    const hasUnsavedChanges = isDraft
+        ? slugDirty || statusDirty
+        : contentDirty || slugDirty || statusDirty;
+
+    // Confirm before discarding unsaved changes on a close attempt. Never nag
+    // when nothing changed.
+    const attemptClose = () => {
+        if (hasUnsavedChanges) {
+            const ok = window.confirm(
+                "Discard unsaved changes? Your edits to this issue haven't been saved."
+            );
+            if (!ok) return;
+        }
+        setOpen(false);
+    };
+
     return (
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog
+            open={open}
+            onOpenChange={(next) => {
+                if (next) {
+                    setOpen(true);
+                    return;
+                }
+                // Radix requested a close (backdrop / Esc / X). Route it through
+                // the guard so unsaved changes get a confirm first.
+                attemptClose();
+            }}
+        >
             <DialogTrigger asChild>
                 <Button size="sm" variant="secondary">Edit</Button>
             </DialogTrigger>
@@ -1119,7 +1164,7 @@ function EditNewsletterDialog({
                     <IssueLintPanel html={html} preheader={preheader} />
 
                     <div className="flex justify-end gap-2 pt-2">
-                        <Button variant="secondary" onClick={() => setOpen(false)}>
+                        <Button variant="secondary" onClick={attemptClose}>
                             Cancel
                         </Button>
                         <Button
