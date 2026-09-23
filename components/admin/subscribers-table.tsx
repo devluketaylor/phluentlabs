@@ -217,6 +217,34 @@ export const SubscribersTable = () => {
         onError: (err) => toast.error(err.message || "Resend failed"),
     });
 
+    // Bulk tag apply/remove over the current selection. The input drives both
+    // actions; picking an existing tag from the datalist or typing a new one
+    // both work. We keep the selection after tagging so the admin can chain a
+    // couple of tag ops on the same set.
+    const [bulkTag, setBulkTag] = useState("");
+    const bulkAddTag = trpc.adminSubscribers.bulkAddTag.useMutation({
+        onSuccess: async (res) => {
+            await Promise.all([
+                utils.adminSubscribers.list.invalidate(),
+                utils.adminSubscribers.listTags.invalidate(),
+            ]);
+            setBulkTag("");
+            toast.success(`Added \u201c${res.tag}\u201d to ${selectedIds.length} subscriber${selectedIds.length === 1 ? "" : "s"}`);
+        },
+        onError: (err) => toast.error(err.message || "Bulk tag add failed"),
+    });
+    const bulkRemoveTag = trpc.adminSubscribers.bulkRemoveTag.useMutation({
+        onSuccess: async (res) => {
+            await Promise.all([
+                utils.adminSubscribers.list.invalidate(),
+                utils.adminSubscribers.listTags.invalidate(),
+            ]);
+            setBulkTag("");
+            toast.success(`Removed \u201c${res.tag}\u201d from ${selectedIds.length} subscriber${selectedIds.length === 1 ? "" : "s"}`);
+        },
+        onError: (err) => toast.error(err.message || "Bulk tag remove failed"),
+    });
+
     const [bulkExporting, setBulkExporting] = useState(false);
     const handleExportSelected = async () => {
         if (selectedIds.length === 0) return;
@@ -241,7 +269,7 @@ export const SubscribersTable = () => {
         }
     };
 
-    const bulkBusy = bulkUpdateStatus.isPending || bulkDelete.isPending || bulkExporting || bulkResendConfirmation.isPending;
+    const bulkBusy = bulkUpdateStatus.isPending || bulkDelete.isPending || bulkExporting || bulkResendConfirmation.isPending || bulkAddTag.isPending || bulkRemoveTag.isPending;
 
         return (
         <div className="space-y-4">
@@ -337,6 +365,48 @@ export const SubscribersTable = () => {
                 >
                     {bulkResendConfirmation.isPending ? "Resending…" : "Resend confirmation"}
                 </Button>
+                <div className="flex items-center gap-1">
+                    <Input
+                        value={bulkTag}
+                        onChange={(e) => setBulkTag(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && bulkTag.trim() && !bulkBusy) {
+                                bulkAddTag.mutate({ ids: selectedIds, tag: bulkTag.trim() });
+                            }
+                        }}
+                        placeholder="Tag…"
+                        list="bulk-tag-options"
+                        className="h-8 w-[130px]"
+                        disabled={bulkBusy}
+                    />
+                    <datalist id="bulk-tag-options">
+                        {availableTags.map((t) => (
+                            <option key={t.tag} value={t.tag} />
+                        ))}
+                    </datalist>
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        title="Add this tag to every selected subscriber (skips those who already have it)"
+                        onClick={() =>
+                            bulkAddTag.mutate({ ids: selectedIds, tag: bulkTag.trim() })
+                        }
+                        disabled={bulkBusy || !bulkTag.trim()}
+                    >
+                        {bulkAddTag.isPending ? "Adding…" : "Add tag"}
+                    </Button>
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        title="Remove this tag from every selected subscriber"
+                        onClick={() =>
+                            bulkRemoveTag.mutate({ ids: selectedIds, tag: bulkTag.trim() })
+                        }
+                        disabled={bulkBusy || !bulkTag.trim()}
+                    >
+                        {bulkRemoveTag.isPending ? "Removing…" : "Remove tag"}
+                    </Button>
+                </div>
                 <Button
                     variant="destructive"
                     size="sm"

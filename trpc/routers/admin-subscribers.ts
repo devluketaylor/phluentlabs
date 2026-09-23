@@ -645,6 +645,75 @@ export const adminSubscribersRouter = router({
             return { ok: true };
         }),
 
+    // Bulk-add a single tag to many subscribers at once (from the table's
+    // multi-select bulk-actions bar). Adds the tag ONLY where it isn't already
+    // present (array_append guarded by NOT array-contains), so re-applying is
+    // idempotent and never duplicates. The tag is normalized (trim + drop
+    // empty) up front; a blank tag is rejected. Audit-logged. NO schema change
+    // (reuses the existing text[] `tags` column).
+    bulkAddTag: editorProcedure
+        .input(
+            z.object({
+                ids: z.array(z.string().min(1)).min(1).max(5000),
+                tag: z.string().min(1),
+            })
+        )
+        .mutation(async ({ input, ctx }) => {
+            const [tag] = normalizeTags([input.tag]);
+            if (!tag) throw new Error("Tag cannot be empty.");
+            await ctx.db
+                .update(subscribers)
+                .set({
+                    tags: sql`array_append(${subscribers.tags}, ${tag})`,
+                    updatedAt: new Date(),
+                })
+                .where(
+                    and(
+                        inArray(subscribers.id, input.ids),
+                        sql`NOT (${subscribers.tags} @> ARRAY[${tag}]::text[])`,
+                    ),
+                );
+            await recordAudit(ctx, {
+                action: "subscriber.bulkAddTag",
+                targetType: "subscriber",
+                metadata: { tag, count: input.ids.length, ids: input.ids },
+            });
+            return { ok: true as const, tag };
+        }),
+
+    // Bulk-remove a single tag from many subscribers at once. array_remove
+    // strips every matching element from each row's array; rows that never had
+    // the tag are unaffected. Audit-logged. NO schema change.
+    bulkRemoveTag: editorProcedure
+        .input(
+            z.object({
+                ids: z.array(z.string().min(1)).min(1).max(5000),
+                tag: z.string().min(1),
+            })
+        )
+        .mutation(async ({ input, ctx }) => {
+            const [tag] = normalizeTags([input.tag]);
+            if (!tag) throw new Error("Tag cannot be empty.");
+            await ctx.db
+                .update(subscribers)
+                .set({
+                    tags: sql`array_remove(${subscribers.tags}, ${tag})`,
+                    updatedAt: new Date(),
+                })
+                .where(
+                    and(
+                        inArray(subscribers.id, input.ids),
+                        sql`${subscribers.tags} @> ARRAY[${tag}]::text[]`,
+                    ),
+                );
+            await recordAudit(ctx, {
+                action: "subscriber.bulkRemoveTag",
+                targetType: "subscriber",
+                metadata: { tag, count: input.ids.length, ids: input.ids },
+            });
+            return { ok: true as const, tag };
+        }),
+
     // Distinct tags currently in use across all subscribers, with a usage count,
     // for the table's tag filter dropdown. Uses unnest() to flatten the arrays.
     listTags: adminProcedure.query(async ({ ctx }) => {
