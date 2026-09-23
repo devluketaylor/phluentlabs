@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
+import { IssueLintPanel } from "@/components/admin/issue-lint-panel";
 import { FormHeader } from "@/components/header";
 import { MailPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -99,6 +100,7 @@ const AdminPage = () => {
                     onChange={setHtml}
                     placeholder="Write the email body"
                 />
+                <IssueLintPanel html={html} preheader={null} />
                 <Button onClick={onSave} disabled={create.isPending || !subject.trim()}>
                     {create.isPending ? "Saving..." : "Save draft"}
                 </Button>
