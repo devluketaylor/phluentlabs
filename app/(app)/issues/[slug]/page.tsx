@@ -40,14 +40,24 @@ async function getAdjacentIssues(current: { sentAt: Date | null; createdAt: Date
     const anchor = current.sentAt ?? current.createdAt;
     try {
         const [prev] = await db
-            .select({ slug: newsletters.slug, subject: newsletters.subject })
+            .select({
+                slug: newsletters.slug,
+                subject: newsletters.subject,
+                sentAt: newsletters.sentAt,
+                createdAt: newsletters.createdAt,
+            })
             .from(newsletters)
             .where(and(eq(newsletters.status, "sent"), lt(newsletters.sentAt, anchor)))
             .orderBy(desc(newsletters.sentAt))
             .limit(1);
 
         const [next] = await db
-            .select({ slug: newsletters.slug, subject: newsletters.subject })
+            .select({
+                slug: newsletters.slug,
+                subject: newsletters.subject,
+                sentAt: newsletters.sentAt,
+                createdAt: newsletters.createdAt,
+            })
             .from(newsletters)
             .where(and(eq(newsletters.status, "sent"), gt(newsletters.sentAt, anchor)))
             .orderBy(asc(newsletters.sentAt))
@@ -243,6 +253,25 @@ export default async function IssuePage({ params }: Props) {
     );
 }
 
+// Small formatted date shown under each adjacent-issue title, so readers can
+// place the previous/next issue in time before clicking through.
+function IssueNavDate({ date }: { date: Date | null }) {
+    if (!date) return null;
+    const d = new Date(date);
+    return (
+        <time
+            dateTime={d.toISOString()}
+            className="text-xs text-muted-foreground"
+        >
+            {d.toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+            })}
+        </time>
+    );
+}
+
 async function IssueNav({
     sentAt,
     createdAt,
@@ -267,6 +296,7 @@ async function IssueNav({
                     <span className="text-sm font-medium transition-colors line-clamp-2 group-hover:text-foreground">
                         {prev.subject}
                     </span>
+                    <IssueNavDate date={prev.sentAt ?? prev.createdAt} />
                 </Link>
             ) : (
                 <span aria-hidden className="hidden sm:block" />
@@ -283,6 +313,7 @@ async function IssueNav({
                     <span className="text-sm font-medium transition-colors line-clamp-2 group-hover:text-foreground">
                         {next.subject}
                     </span>
+                    <IssueNavDate date={next.sentAt ?? next.createdAt} />
                 </Link>
             )}
         </nav>
