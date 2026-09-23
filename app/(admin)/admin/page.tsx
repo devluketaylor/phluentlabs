@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
 import { IssueLintPanel } from "@/components/admin/issue-lint-panel";
+import { SubjectMeter } from "@/components/admin/subject-meter";
 import { FormHeader } from "@/components/header";
 import { MailPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -53,11 +54,14 @@ const AdminPage = () => {
                     title="Create a newsletter issue"
                     description="Fill out the details below to create a new newsletter issue."
                 />
-                <Input
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="Subject line"
-                />
+                <div className="space-y-1">
+                    <Input
+                        value={subject}
+                        onChange={(e) => setSubject(e.target.value)}
+                        placeholder="Subject line"
+                    />
+                    <SubjectMeter subject={subject} />
+                </div>
                 <div className="space-y-1">
                     <Input
                         value={slug}

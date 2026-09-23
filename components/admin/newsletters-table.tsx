@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
 import { IssueLintPanel, SendReadinessChecklist } from "@/components/admin/issue-lint-panel";
+import { SubjectMeter } from "@/components/admin/subject-meter";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
 import { BarChart3, Link2, Check, Copy, UserRound } from "lucide-react";
@@ -1050,6 +1051,7 @@ function EditNewsletterDialog({
                                 onChange={(e) => { markDirty(); setSubject(e.target.value); }}
                                 placeholder="Subject line"
                             />
+                            <SubjectMeter subject={subject} />
                         </div>
                         <div className="space-y-2">
                             <div className="text-sm font-medium">Status</div>
@@ -1076,6 +1078,7 @@ function EditNewsletterDialog({
                             placeholder="Alternate subject line to test against"
                             disabled={isSent}
                         />
+                        {subjectB.trim() ? <SubjectMeter subject={subjectB} label="Subject B" /> : null}
                         <p className="text-xs text-muted-foreground">
                             {isSent
                                 ? "This issue has already been sent — the A/B split is locked in."
