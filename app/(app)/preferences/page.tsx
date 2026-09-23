@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { AtSign, Check, Gift, Layers, Pause, Play, UserX } from "lucide-react";
+import { AtSign, Check, Download, Gift, Layers, Pause, Play, UserX } from "lucide-react";
 import { ReferralMilestones } from "@/components/referral-milestones";
 
 function PreferencesContent() {
@@ -51,8 +51,35 @@ function PreferencesContent() {
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
     const [newEmail, setNewEmail] = useState("");
+    const [exporting, setExporting] = useState(false);
 
     const updateEmail = trpc.subscribe.updateEmail.useMutation();
+
+    // GDPR/CCPA "my data" export — fetches the caller's own record on demand
+    // and saves it as a JSON file client-side.
+    const downloadMyData = async () => {
+        setExporting(true);
+        try {
+            const data = await utils.subscribe.exportMyData.fetch({ token });
+            const blob = new Blob([JSON.stringify(data, null, 2)], {
+                type: "application/json",
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            const stamp = new Date().toISOString().slice(0, 10);
+            a.download = `phluent-my-data-${stamp}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            toast.success("Your data has been downloaded.");
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Something went wrong.");
+        } finally {
+            setExporting(false);
+        }
+    };
 
     // Seed the local form from the loaded preferences (once available).
     useEffect(() => {
@@ -297,6 +324,26 @@ function PreferencesContent() {
                     disabled={updateEmail.isPending || !newEmail.trim()}
                 >
                     {updateEmail.isPending ? "Updating..." : "Update email"}
+                </Button>
+            </div>
+
+            {/* Your data (GDPR/CCPA export) */}
+            <div className="mt-8 border-t pt-6 space-y-3">
+                <div className="flex items-center gap-2">
+                    <Download className="size-4 text-primary" />
+                    <p className="text-sm font-medium">Your data</p>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                    Download a copy of the data we hold about you — your record,
+                    subscriptions, and engagement summary — as a JSON file.
+                </p>
+                <Button
+                    variant="outline"
+                    onClick={downloadMyData}
+                    disabled={exporting}
+                >
+                    <Download className="size-4" />{" "}
+                    {exporting ? "Preparing..." : "Download my data"}
                 </Button>
             </div>
 

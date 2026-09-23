@@ -2,7 +2,8 @@ import {publicProcedure, router} from "@/trpc/server";
 import {z} from "zod";
 import {subscribers} from "@/db/schemas/subscribers";
 import {publications, subscriberPublications} from "@/db/schemas/publications";
-import {and, count, eq, isNull} from "drizzle-orm";
+import {newsletterRecipients} from "@/db/schemas/newsletter-recipients";
+import {and, count, eq, isNull, sql} from "drizzle-orm";
 import {signSubscriberToken, verifySubscriberToken} from "@/lib/subscriber-token";
 import {generateReferralCode} from "@/lib/referral";
 import {computeReferralProgress} from "@/lib/referral-tiers";
@@ -407,6 +408,106 @@ export const subscribeRouter = router({
                     firstName: me.firstName ?? "",
                     lastName: me.lastName ?? "",
                     status: me.status,
+                };
+            }),
+
+        // Export the caller's OWN data (GDPR/CCPA "my data"). Token-gated
+        // (scope "prefs"), own-row only — the prefs token proves ownership of
+        // exactly this one subscriber row, so no other subscriber's data is
+        // ever exposed (anti-enumeration by design: only payload.subId is
+        // queried; there is no way to request another id). Returns a small
+        // JSON of the subscriber's own record plus the publication opt-ins and
+        // an aggregate engagement summary they're entitled to. Deliberately
+        // does NOT include internal referral graph details of OTHER people
+        // (only the caller's own referral code + their referred-signup count).
+        exportMyData: publicProcedure
+            .input(z.object({ token: z.string().min(1) }))
+            .query(async ({ input, ctx }) => {
+                const payload = await verifySubscriberToken(input.token);
+                if (payload.scope !== "prefs") throw new Error("Invalid token")
+
+                const [me] = await ctx.db
+                    .select({
+                        id: subscribers.id,
+                        email: subscribers.email,
+                        firstName: subscribers.firstName,
+                        lastName: subscribers.lastName,
+                        status: subscribers.status,
+                        tags: subscribers.tags,
+                        referralCode: subscribers.referralCode,
+                        createdAt: subscribers.createdAt,
+                        confirmedAt: subscribers.confirmedAt,
+                        unsubscribedAt: subscribers.unsubscribedAt,
+                        updatedAt: subscribers.updatedAt,
+                    })
+                    .from(subscribers)
+                    .where(eq(subscribers.id, payload.subId));
+                if (!me) throw new Error("Subscriber not found");
+
+                // How many confirmed signups this subscriber referred (their
+                // own count only — never the referred people's identities).
+                const [refRow] = await ctx.db
+                    .select({ n: count() })
+                    .from(subscribers)
+                    .where(eq(subscribers.referredBy, me.id));
+
+                // Publication opt-ins the caller currently holds (by name).
+                const optRows = await ctx.db
+                    .select({
+                        name: publications.name,
+                        slug: publications.slug,
+                        optedInAt: subscriberPublications.createdAt,
+                    })
+                    .from(subscriberPublications)
+                    .innerJoin(
+                        publications,
+                        eq(publications.id, subscriberPublications.publicationId),
+                    )
+                    .where(eq(subscriberPublications.subscriberId, me.id));
+
+                // Aggregate engagement summary over issues sent to this
+                // subscriber (counts only — no per-issue content/URLs).
+                const [eng] = await ctx.db
+                    .select({
+                        issuesSent: count(),
+                        opened: sql<number>`count(*) filter (where ${newsletterRecipients.openedAt} is not null)`,
+                        clicked: sql<number>`count(*) filter (where ${newsletterRecipients.clickedAt} is not null)`,
+                    })
+                    .from(newsletterRecipients)
+                    .where(and(
+                        eq(newsletterRecipients.subscriberId, me.id),
+                        eq(newsletterRecipients.status, "sent"),
+                    ));
+
+                const issuesSent = Number(eng?.issuesSent ?? 0);
+                const opened = Number(eng?.opened ?? 0);
+                const clicked = Number(eng?.clicked ?? 0);
+
+                return {
+                    exportedAt: new Date().toISOString(),
+                    subscriber: {
+                        email: me.email,
+                        firstName: me.firstName ?? null,
+                        lastName: me.lastName ?? null,
+                        status: me.status,
+                        tags: me.tags ?? [],
+                        referralCode: me.referralCode ?? null,
+                        referredSignups: Number(refRow?.n ?? 0),
+                        subscribedAt: me.createdAt?.toISOString() ?? null,
+                        confirmedAt: me.confirmedAt?.toISOString() ?? null,
+                        unsubscribedAt: me.unsubscribedAt?.toISOString() ?? null,
+                        lastUpdatedAt: me.updatedAt?.toISOString() ?? null,
+                    },
+                    publicationOptIns: optRows.map((r) => ({
+                        name: r.name,
+                        slug: r.slug,
+                        optedInAt: r.optedInAt?.toISOString() ?? null,
+                    })),
+                    engagement: {
+                        issuesReceived: issuesSent,
+                        issuesOpened: opened,
+                        linksClicked: clicked,
+                    },
                 };
             }),
 
