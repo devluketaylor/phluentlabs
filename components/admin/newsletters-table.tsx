@@ -34,7 +34,7 @@ import { IssueLintPanel, SendReadinessChecklist } from "@/components/admin/issue
 import { SubjectMeter } from "@/components/admin/subject-meter";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
-import { BarChart3, Link2, Check, Copy, UserRound, RotateCcw } from "lucide-react";
+import { BarChart3, Link2, Check, Copy, UserRound, Users, RotateCcw } from "lucide-react";
 
 type NewsletterStatus = "draft" | "scheduled" | "sent";
 
@@ -118,6 +118,18 @@ export function NewslettersTable() {
         onError: (err) => toast.error(err.message || "Failed to send test"),
     });
 
+    const sendTestToTeam = trpc.adminNewsletter.sendTestToTeam.useMutation({
+        onSuccess: (res) => {
+            const r = res as { sent: number; failed: number; total: number };
+            toast.success(
+                r.failed > 0
+                    ? `Test sent to ${r.sent}/${r.total} team members (${r.failed} failed)`
+                    : `Test sent to ${r.sent} team member${r.sent === 1 ? "" : "s"}`
+            );
+        },
+        onError: (err) => toast.error(err.message || "Failed to send team test"),
+    });
+
     const schedule = trpc.adminNewsletter.schedule.useMutation({
         onSuccess: (_res, vars) => {
             utils.adminNewsletter.list.invalidate();
@@ -189,6 +201,7 @@ export function NewslettersTable() {
                                         <TestSendDialog
                                             newsletter={n}
                                             onSendTest={(to) => sendTest.mutateAsync({ id: n.id, to })}
+                                            onSendTestToTeam={() => sendTestToTeam.mutateAsync({ id: n.id })}
                                         />
                                         <EditNewsletterDialog
                                             newsletter={n}
@@ -583,9 +596,11 @@ function PreviewNewsletterDialog({
 function TestSendDialog({
     newsletter,
     onSendTest,
+    onSendTestToTeam,
 }: {
     newsletter: { subject: string };
     onSendTest: (to: string) => Promise<unknown>;
+    onSendTestToTeam: () => Promise<unknown>;
 }) {
     const [open, setOpen] = useState(false);
     const [to, setTo] = useState("");
@@ -608,6 +623,8 @@ function TestSendDialog({
         }
     }, [open, myEmail, touched, to]);
 
+    const [sendingTeam, setSendingTeam] = useState(false);
+
     const doSend = async (address: string) => {
         setSending(true);
         setError(null);
@@ -620,6 +637,31 @@ function TestSendDialog({
             setError(e instanceof Error ? e.message : "Failed to send test");
         } finally {
             setSending(false);
+        }
+    };
+
+    const doSendTeam = async () => {
+        setSendingTeam(true);
+        setError(null);
+        setResult(null);
+        try {
+            const res = (await onSendTestToTeam()) as
+                | { sent: number; failed: number; total: number }
+                | undefined;
+            if (res) {
+                setResult(
+                    res.failed > 0
+                        ? `Test sent to ${res.sent}/${res.total} team members (${res.failed} failed)`
+                        : `Test sent to ${res.sent} team member${res.sent === 1 ? "" : "s"}`
+                );
+            } else {
+                setResult("Test sent to the team");
+            }
+            setLastTestedAt(new Date());
+        } catch (e) {
+            setError(e instanceof Error ? e.message : "Failed to send team test");
+        } finally {
+            setSendingTeam(false);
         }
     };
 
@@ -641,13 +683,25 @@ function TestSendDialog({
                     <Button
                         variant="secondary"
                         className="w-full"
-                        disabled={sending}
+                        disabled={sending || sendingTeam}
                         onClick={() => doSend(myEmail)}
                     >
                         <UserRound className="size-4" />
                         {sending ? "Sending…" : `Send test to me (${myEmail})`}
                     </Button>
                 )}
+                <Button
+                    variant="outline"
+                    className="w-full"
+                    disabled={sending || sendingTeam}
+                    onClick={doSendTeam}
+                >
+                    <Users className="size-4" />
+                    {sendingTeam ? "Sending…" : "Send test to the whole team"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                    Sends a test copy to every owner, admin, and editor so the issue can be proofed by the whole team before a real send.
+                </p>
                 <Input
                     type="email"
                     placeholder="you@example.com"
@@ -665,10 +719,10 @@ function TestSendDialog({
                 {result && <p className="text-sm text-green-600 dark:text-green-400">{result}</p>}
                 {error && <p className="text-sm text-destructive">{error}</p>}
                 <DialogFooter>
-                    <Button variant="secondary" onClick={() => setOpen(false)} disabled={sending}>
+                    <Button variant="secondary" onClick={() => setOpen(false)} disabled={sending || sendingTeam}>
                         Close
                     </Button>
-                    <Button disabled={sending || !to.includes("@")} onClick={() => doSend(to)}>
+                    <Button disabled={sending || sendingTeam || !to.includes("@")} onClick={() => doSend(to)}>
                         {sending ? "Sending…" : "Send test"}
                     </Button>
                 </DialogFooter>

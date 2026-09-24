@@ -17,7 +17,7 @@ import { shareClicks } from "@/db/schemas/share-clicks";
 import { issueReactions } from "@/db/schemas/issue-reactions";
 import { feedback } from "@/db/schemas/feedback";
 import { publications } from "@/db/schemas/publications";
-import { and, arrayContains, count, desc, eq, ilike, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, arrayContains, count, desc, eq, ilike, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { signPreviewToken } from "@/lib/preview-token";
@@ -26,6 +26,15 @@ import { sendNewsletterToSubscribers } from "@/lib/send-newsletter";
 import { resolveCohortSubscribers } from "@/lib/engagement-cohort";
 import { activeSubscriberWhere, autoResumeElapsedSnoozes } from "@/lib/snooze";
 import { recordAudit } from "@/lib/audit";
+import { user } from "@/db/schemas/auth";
+import { normalizeRole } from "@/lib/roles";
+
+// Shared test-email HTML: mirrors the real send's footer so the test matches
+// production output, but with a dummy unsubscribe link (no real token needed
+// for a test) + a clear "this is a test" banner subscribers never see.
+function buildTestEmailHtml(issueHtml: string): string {
+    return `<div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:6px;padding:10px 14px;margin-bottom:20px;font-size:13px;color:#92400e;">This is a <strong>test</strong> of your newsletter. Subscribers will not see this banner.</div>${issueHtml}<p style="margin-top:32px;font-size:12px;color:#888;"><a href="#">Unsubscribe</a></p>`;
+}
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -797,9 +806,7 @@ export const adminNewsletterRouter = router({
 
             const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
 
-            // Mirror the real send's footer so the test matches production output,
-            // but with a dummy unsubscribe link (no real token needed for a test).
-            const html = `<div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:6px;padding:10px 14px;margin-bottom:20px;font-size:13px;color:#92400e;">This is a <strong>test</strong> of your newsletter. Subscribers will not see this banner.</div>${newsletter.html}<p style="margin-top:32px;font-size:12px;color:#888;"><a href="#">Unsubscribe</a></p>`;
+            const html = buildTestEmailHtml(newsletter.html);
 
             await resend.emails.send({
                 from: fromEmail,
@@ -809,6 +816,75 @@ export const adminNewsletterRouter = router({
             });
 
             return { ok: true, to: input.to };
+        }),
+
+    // Editor: send a test copy of an issue to the WHOLE TEAM (all owner/admin/
+    // editor members) in one click, so an issue can be proofed by everyone with
+    // authoring access before a real send (Tier 15). Viewers are excluded — they
+    // can't author, so they don't need proof copies. Resolves member emails
+    // server-side (the client never sees the roster) and sends each a test.
+    // Best-effort per recipient: one failed address never blocks the others.
+    sendTestToTeam: editorProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .mutation(async ({ input, ctx }) => {
+            const [newsletter] = await ctx.db
+                .select()
+                .from(newsletters)
+                .where(eq(newsletters.id, input.id));
+
+            if (!newsletter) throw new TRPCError({ code: "NOT_FOUND", message: "Newsletter not found" });
+
+            // Resolve every team member with an authoring role (owner/admin/editor).
+            // Pull all rows with a role, then filter by normalized rank so legacy
+            // "admin"-ish roles are included and viewers are excluded.
+            const rows = await ctx.db
+                .select({ email: user.email, role: user.role })
+                .from(user)
+                .where(isNotNull(user.role));
+
+            const seen = new Set<string>();
+            const recipients: string[] = [];
+            for (const r of rows) {
+                const role = normalizeRole(r.role);
+                if (!role || role === "viewer") continue;
+                const email = (r.email ?? "").trim().toLowerCase();
+                if (!email || seen.has(email)) continue;
+                seen.add(email);
+                recipients.push(email);
+            }
+
+            if (recipients.length === 0) {
+                throw new TRPCError({
+                    code: "NOT_FOUND",
+                    message: "No team members with an authoring role were found to send a test to.",
+                });
+            }
+
+            const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
+            const html = buildTestEmailHtml(newsletter.html);
+            const subject = `[TEST] ${newsletter.subject}`;
+
+            // Best-effort per recipient — one bad address must not abort the rest.
+            let sent = 0;
+            const failed: string[] = [];
+            for (const to of recipients) {
+                try {
+                    await resend.emails.send({ from: fromEmail, to, subject, html });
+                    sent += 1;
+                } catch (err) {
+                    console.error("[sendTestToTeam] failed for", to, err);
+                    failed.push(to);
+                }
+            }
+
+            await recordAudit(ctx, {
+                action: "newsletter.sendTestToTeam",
+                targetType: "newsletter",
+                targetId: newsletter.id,
+                metadata: { recipientCount: recipients.length, sent, failed: failed.length },
+            });
+
+            return { ok: true, sent, failed: failed.length, total: recipients.length };
         }),
 
     // Admin: list reader feedback captured from the public /feedback form (and
