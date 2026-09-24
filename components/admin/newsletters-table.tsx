@@ -349,6 +349,31 @@ function ScheduleDialog({
         }
     };
 
+    // One-click "use recommended time": jump the picker to the NEXT future
+    // occurrence of the audience's peak open day + window start, in the admin's
+    // local wall-clock (matching the datetime-local input + the schedule cron).
+    // We aim at the start of the peak 3-hour window so the send lands just as
+    // engagement ramps. Always lands strictly in the future.
+    const applyRecommendedTime = () => {
+        if (!sendTime?.hasSignal) return;
+        const { dayIndex, windowStart } = sendTime.recommendation;
+        const now = new Date();
+        const target = new Date(now);
+        target.setHours(windowStart, 0, 0, 0);
+        // Days until the recommended weekday (0 = today).
+        let addDays = (dayIndex - now.getDay() + 7) % 7;
+        // If it's today's weekday but the window has already passed, roll a week.
+        if (addDays === 0 && target.getTime() <= now.getTime()) addDays = 7;
+        target.setDate(target.getDate() + addDays);
+        // Format back to a datetime-local value (local wall-clock, no tz suffix).
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const local = `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(
+            target.getDate()
+        )}T${pad(target.getHours())}:${pad(target.getMinutes())}`;
+        setValue(local);
+        setError(null);
+    };
+
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -371,14 +396,25 @@ function ScheduleDialog({
                     onChange={(e) => setValue(e.target.value)}
                 />
                 {sendTime && sendTime.hasSignal && (
-                    <p className="text-xs text-muted-foreground">
-                        💡 Readers open most on{" "}
-                        <span className="font-medium text-foreground">
-                            {sendTime.recommendation.day}s around{" "}
-                            {sendTime.recommendation.windowLabel}
-                        </span>{" "}
-                        — consider sending then.
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="text-xs text-muted-foreground">
+                            💡 Readers open most on{" "}
+                            <span className="font-medium text-foreground">
+                                {sendTime.recommendation.day}s around{" "}
+                                {sendTime.recommendation.windowLabel}
+                            </span>
+                            .
+                        </p>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-xs"
+                            onClick={applyRecommendedTime}
+                        >
+                            Use recommended time
+                        </Button>
+                    </div>
                 )}
                 <SendReadinessChecklist
                     subject={newsletter.subject}
