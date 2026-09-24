@@ -169,6 +169,13 @@
       "when": 1790247919741,
       "tag": "0023_pretty_iron_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790280225799,
+      "tag": "0024_little_pestilence",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,7 @@ import { adminApiKeysRouter } from "@/trpc/routers/admin-api-keys";
 import { adminTeamRouter } from "@/trpc/routers/admin-team";
 import { adminPublicationsRouter } from "@/trpc/routers/admin-publications";
 import { adminContentBlocksRouter } from "@/trpc/routers/admin-content-blocks";
+import { adminSavedSegmentsRouter } from "@/trpc/routers/admin-saved-segments";
 import { ideaLabRouter } from "@/trpc/routers/idea-lab";
 import { usageRouter } from "@/trpc/routers/usage";
 import { adminPortfolioRouter } from "@/trpc/routers/admin-portfolio";
@@ -23,6 +24,7 @@ export const appRouter = router({
     adminTeam: adminTeamRouter,
     adminPublications: adminPublicationsRouter,
     adminContentBlocks: adminContentBlocksRouter,
+    adminSavedSegments: adminSavedSegmentsRouter,
     ideaLab: ideaLabRouter,
     usage: usageRouter,
     newsletter: newsletterRouter,

@@ -75,6 +75,40 @@ export const SubscribersTable = () => {
         }
     }, [tag, tagsQuery.data, availableTags]);
 
+    // Saved segment views: persist the current q/status/tag combo under a name
+    // and one-click re-apply it. The table filters otherwise reset every visit.
+    const segmentsQuery = trpc.adminSavedSegments.list.useQuery();
+    const savedSegments = segmentsQuery.data?.segments ?? [];
+    const [segmentName, setSegmentName] = useState("");
+    const hasActiveFilter = q.trim() !== "" || status !== "all" || tag !== "all";
+
+    const applySegment = (filter: { q?: string; status?: Status; tag?: string }) => {
+        setQ(filter.q ?? "");
+        setStatus(filter.status ?? "all");
+        // Only apply a saved tag if it still exists in the list; otherwise clear.
+        if (filter.tag && availableTags.some((t) => t.tag === filter.tag)) {
+            setTag(filter.tag);
+        } else {
+            setTag("all");
+        }
+    };
+
+    const createSegment = trpc.adminSavedSegments.create.useMutation({
+        onSuccess: () => {
+            setSegmentName("");
+            void segmentsQuery.refetch();
+            toast.success("Saved view");
+        },
+        onError: (err) => toast.error(err.message || "Could not save view"),
+    });
+    const deleteSegment = trpc.adminSavedSegments.delete.useMutation({
+        onSuccess: () => {
+            void segmentsQuery.refetch();
+            toast.success("Deleted view");
+        },
+        onError: (err) => toast.error(err.message || "Could not delete view"),
+    });
+
     const total = list.data?.total ?? 0;
     const rows = list.data?.rows ?? [];
 
@@ -307,6 +341,26 @@ export const SubscribersTable = () => {
         ))}
     </SelectContent>
 </Select>
+
+        <SavedViewsMenu
+            segments={savedSegments}
+            hasActiveFilter={hasActiveFilter}
+            segmentName={segmentName}
+            setSegmentName={setSegmentName}
+            onApply={applySegment}
+            onSave={() =>
+                createSegment.mutate({
+                    name: segmentName.trim(),
+                    filter: {
+                        q: q.trim() || undefined,
+                        status: status === "all" ? undefined : status,
+                        tag: tag === "all" ? undefined : tag,
+                    },
+                })
+            }
+            onDelete={(id) => deleteSegment.mutate({ id })}
+            saving={createSegment.isPending}
+        />
 </div>
 
     <div className="flex flex-wrap items-center gap-2">
@@ -575,6 +629,133 @@ export const SubscribersTable = () => {
     </div>
 </div>
         )
+}
+
+type SegmentFilter = { q?: string; status?: Status; tag?: string };
+type SavedSegment = { id: string; name: string; filter: SegmentFilter };
+
+// Describe a saved filter combo compactly for the menu ("Subscribed · #vip").
+function describeFilter(f: SegmentFilter): string {
+    const parts: string[] = [];
+    if (f.status) parts.push(f.status);
+    if (f.tag) parts.push(`#${f.tag}`);
+    if (f.q) parts.push(`“${f.q}”`);
+    return parts.length ? parts.join(" · ") : "All subscribers";
+}
+
+function SavedViewsMenu({
+    segments,
+    hasActiveFilter,
+    segmentName,
+    setSegmentName,
+    onApply,
+    onSave,
+    onDelete,
+    saving,
+}: {
+    segments: SavedSegment[];
+    hasActiveFilter: boolean;
+    segmentName: string;
+    setSegmentName: (v: string) => void;
+    onApply: (f: SegmentFilter) => void;
+    onSave: () => void;
+    onDelete: (id: string) => void;
+    saving: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    return (
+        <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+                <Button variant="outline" className="sm:w-auto">
+                    Saved views{segments.length ? ` (${segments.length})` : ""}
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Saved views</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                    {/* Existing views: click to apply, trash to delete. */}
+                    {segments.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            No saved views yet. Set a search / status / tag filter below,
+                            then save it here to re-apply in one click next time.
+                        </p>
+                    ) : (
+                        <ul className="space-y-1">
+                            {segments.map((seg) => (
+                                <li
+                                    key={seg.id}
+                                    className="flex items-center justify-between gap-2 border border-border px-3 py-2"
+                                >
+                                    <button
+                                        type="button"
+                                        className="min-w-0 flex-1 text-left"
+                                        onClick={() => {
+                                            onApply(seg.filter);
+                                            setOpen(false);
+                                        }}
+                                    >
+                                        <div className="truncate text-sm font-medium">{seg.name}</div>
+                                        <div className="truncate text-xs text-muted-foreground">
+                                            {describeFilter(seg.filter)}
+                                        </div>
+                                    </button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => onDelete(seg.id)}
+                                        title="Delete this saved view"
+                                    >
+                                        Delete
+                                    </Button>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+
+                    {/* Save the current filter combination as a new view. */}
+                    <div className="space-y-2 border-t border-border pt-4">
+                        <div className="text-sm font-medium">Save current filter as a view</div>
+                        <div className="flex items-center gap-2">
+                            <Input
+                                value={segmentName}
+                                onChange={(e) => setSegmentName(e.target.value)}
+                                placeholder="View name…"
+                                maxLength={80}
+                                onKeyDown={(e) => {
+                                    if (
+                                        e.key === "Enter" &&
+                                        hasActiveFilter &&
+                                        segmentName.trim() &&
+                                        !saving
+                                    ) {
+                                        onSave();
+                                    }
+                                }}
+                            />
+                            <Button
+                                onClick={onSave}
+                                disabled={!hasActiveFilter || !segmentName.trim() || saving}
+                                title={
+                                    hasActiveFilter
+                                        ? "Save these filters as a named view"
+                                        : "Set at least one filter first"
+                                }
+                            >
+                                {saving ? "Saving…" : "Save"}
+                            </Button>
+                        </div>
+                        {!hasActiveFilter && (
+                            <p className="text-xs text-muted-foreground">
+                                Set a search, status, or tag filter first — there’s nothing to save yet.
+                            </p>
+                        )}
+                    </div>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
 }
 
 function SortableHead({
