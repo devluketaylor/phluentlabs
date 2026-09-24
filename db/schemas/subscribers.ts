@@ -21,6 +21,13 @@ export const subscribers = pgTable("subscribers", {
     // reminder cron only ever emails a given pending row ONCE. Nullable so
     // existing rows stay valid (NULL = no reminder sent yet).
     confirmReminderSentAt: timestamp("confirm_reminder_sent_at"),
+    // Snooze / time-boxed pause (Tier 15): a subscribed subscriber can pause
+    // delivery until a future date without unsubscribing. Nullable + additive:
+    // NULL = not snoozed. When status = "subscribed" AND pausedUntil is in the
+    // future, the send audience skips them; once the date passes the send path
+    // auto-resumes them (clears pausedUntil) and mails as normal. A free-form
+    // "paused" status remains an indefinite pause (pausedUntil NULL).
+    pausedUntil: timestamp("paused_until"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     confirmedAt: timestamp("confirmed_at"),
     unsubscribedAt: timestamp("unsubscribed_at"),

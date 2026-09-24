@@ -12,6 +12,7 @@ import {Resend} from "resend";
 import {renderConfirmEmail} from "@/lib/emails/confirm-email";
 import {renderWelcomeEmail} from "@/lib/emails/welcome-email";
 import {subscribeCore} from "@/lib/subscribe-core";
+import {snoozeUntil} from "@/lib/snooze";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -398,16 +399,27 @@ export const subscribeRouter = router({
                         firstName: subscribers.firstName,
                         lastName: subscribers.lastName,
                         status: subscribers.status,
+                        pausedUntil: subscribers.pausedUntil,
                     })
                     .from(subscribers)
                     .where(eq(subscribers.id, payload.subId));
                 if (!me) throw new Error("Subscriber not found");
+
+                // Only surface an ACTIVE snooze (future pausedUntil); an elapsed
+                // one is treated as no snooze (the send path auto-resumes it).
+                const snoozedUntil =
+                    me.status === "subscribed" &&
+                    me.pausedUntil &&
+                    me.pausedUntil.getTime() > Date.now()
+                        ? me.pausedUntil.toISOString()
+                        : null;
 
                 return {
                     email: me.email,
                     firstName: me.firstName ?? "",
                     lastName: me.lastName ?? "",
                     status: me.status,
+                    snoozedUntil,
                 };
             }),
 
@@ -520,12 +532,19 @@ export const subscribeRouter = router({
         // (status is a free-form text column). The send audience only targets
         // status = "subscribed", so paused subscribers are automatically
         // skipped by the existing send path.
+        //
+        // SNOOZE (Tier 15): `snoozeWeeks` (2/4/8) sets a time-boxed pause — the
+        // subscriber STAYS `subscribed` but pausedUntil is set into the future,
+        // so the send audience skips them until it elapses (then auto-resumes).
+        // Passing snoozeWeeks: null clears an active snooze (resume now). An
+        // explicit status change also clears any snooze so the two never fight.
         updatePreferences: publicProcedure
             .input(z.object({
                 token: z.string().min(1),
                 firstName: z.string().max(200).optional(),
                 lastName: z.string().max(200).optional(),
                 status: z.enum(["subscribed", "paused", "unsubscribed"]).optional(),
+                snoozeWeeks: z.union([z.literal(2), z.literal(4), z.literal(8)]).nullish(),
             }))
             .mutation(async ({ input, ctx }) => {
                 const payload = await verifySubscriberToken(input.token);
@@ -554,11 +573,33 @@ export const subscribeRouter = router({
 
                 if (input.status !== undefined) {
                     patch.status = input.status;
+                    // Any explicit delivery-state change supersedes a snooze so
+                    // the two never conflict (e.g. resuming/unsubscribing while
+                    // snoozed clears the time-box).
+                    patch.pausedUntil = null;
                     if (input.status === "unsubscribed") {
                         patch.unsubscribedAt = new Date();
                     } else if (input.status === "subscribed") {
                         // Resuming from paused/unsubscribed: clear the opt-out
                         // timestamp so the record reflects an active subscriber.
+                        patch.unsubscribedAt = null;
+                    }
+                }
+
+                // Snooze handling (independent of status). Only meaningful for a
+                // subscribed subscriber; ignored if they're pausing/unsubbing in
+                // the same call (status branch already cleared pausedUntil).
+                if (input.snoozeWeeks !== undefined && input.status === undefined) {
+                    if (input.snoozeWeeks === null) {
+                        // Clear an active snooze — resume normal delivery now.
+                        patch.pausedUntil = null;
+                        patch.status = "subscribed";
+                        patch.unsubscribedAt = null;
+                    } else {
+                        const until = snoozeUntil(input.snoozeWeeks);
+                        patch.pausedUntil = until;
+                        // Snoozing keeps them subscribed (auto-resumes later).
+                        patch.status = "subscribed";
                         patch.unsubscribedAt = null;
                     }
                 }

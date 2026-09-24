@@ -8,6 +8,7 @@ import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { assignVariant } from "@/lib/ab-split";
 import { resolveCohortSubscribers, type EngagementCohort } from "@/lib/engagement-cohort";
+import { activeSubscriberWhere, autoResumeElapsedSnoozes } from "@/lib/snooze";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -112,15 +113,22 @@ export async function sendNewsletterToSubscribers(
     if (!newsletter) throw new Error("Newsletter not found");
     if (newsletter.status === "sent") throw new Error("Newsletter already sent");
 
+    // Auto-resume any subscriber whose time-boxed snooze has elapsed BEFORE we
+    // resolve the audience, so an expired snooze re-joins this send cleanly.
+    await autoResumeElapsedSnoozes();
+
     // Remember the status we started from so a PARTIAL send can be restored to
     // it (rather than forced to "scheduled", which for a manual draft-send with
     // no scheduledAt would never be re-picked-up by the cron). A scheduled
     // issue that partially fails is left "scheduled" so the cron retries it.
     const originalStatus = newsletter.status;
 
+    // Base audience = actively-receiving subscribers (status "subscribed" AND
+    // not currently snoozed — a future pausedUntil is skipped). A tag narrows
+    // it further.
     const audienceWhere = tag
-        ? and(eq(subscribers.status, "subscribed"), arrayContains(subscribers.tags, [tag]))
-        : eq(subscribers.status, "subscribed");
+        ? and(activeSubscriberWhere(), arrayContains(subscribers.tags, [tag]))
+        : activeSubscriberWhere();
 
     // Publication gating (additive): a NULL publicationId is the primary/default
     // stream — every confirmed subscriber is eligible (unchanged behaviour). If

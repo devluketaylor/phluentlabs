@@ -1,0 +1,1 @@
+ALTER TABLE "subscribers" ADD COLUMN "paused_until" timestamp;

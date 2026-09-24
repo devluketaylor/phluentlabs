@@ -24,6 +24,7 @@ import { signPreviewToken } from "@/lib/preview-token";
 import { TRPCError } from "@trpc/server";
 import { sendNewsletterToSubscribers } from "@/lib/send-newsletter";
 import { resolveCohortSubscribers } from "@/lib/engagement-cohort";
+import { activeSubscriberWhere, autoResumeElapsedSnoozes } from "@/lib/snooze";
 import { recordAudit } from "@/lib/audit";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -642,9 +643,13 @@ export const adminNewsletterRouter = router({
         .query(async ({ input, ctx }) => {
             const tag = input.tag?.trim() || null;
             const cohort = input.cohort ?? null;
+            // Auto-resume elapsed snoozes so the preview count reflects who will
+            // actually receive the send (matches the send path exactly).
+            await autoResumeElapsedSnoozes();
+            // Actively-receiving audience: subscribed AND not currently snoozed.
             const where = tag
-                ? and(eq(subscribers.status, "subscribed"), arrayContains(subscribers.tags, [tag]))
-                : eq(subscribers.status, "subscribed");
+                ? and(activeSubscriberWhere(), arrayContains(subscribers.tags, [tag]))
+                : activeSubscriberWhere();
 
             // When a cohort is selected, resolve it to a subscriber-id set and
             // intersect with the (confirmed + optional-tag) base audience — the

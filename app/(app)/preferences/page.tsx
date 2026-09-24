@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { AtSign, Check, Download, Gift, Layers, Pause, Play, UserX } from "lucide-react";
+import { AtSign, Check, Clock, Download, Gift, Layers, Pause, Play, UserX } from "lucide-react";
 import { ReferralMilestones } from "@/components/referral-milestones";
 
 function PreferencesContent() {
@@ -178,6 +178,28 @@ function PreferencesContent() {
             toast.error(err instanceof Error ? err.message : "Something went wrong.");
         }
     };
+
+    const snooze = async (weeks: 2 | 4 | 8 | null, successMsg: string) => {
+        try {
+            await update.mutateAsync({ token, snoozeWeeks: weeks });
+            await utils.subscribe.getPreferences.invalidate({ token });
+            toast.success(successMsg);
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : "Something went wrong.");
+        }
+    };
+
+    // Active time-boxed snooze (future pausedUntil while still subscribed).
+    const snoozedUntil = prefs.data.snoozedUntil
+        ? new Date(prefs.data.snoozedUntil)
+        : null;
+    const snoozedUntilLabel = snoozedUntil
+        ? snoozedUntil.toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+          })
+        : null;
 
     const statusLabel = isSubscribed
         ? "Subscribed"
@@ -351,19 +373,66 @@ function PreferencesContent() {
             <div className="mt-8 border-t pt-6 space-y-3">
                 <p className="text-sm font-medium">Email delivery</p>
 
-                {isSubscribed ? (
+                {isSubscribed && snoozedUntilLabel ? (
+                    <>
+                        <div className="rounded-lg border border-border bg-muted/40 p-3">
+                            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                                <Clock className="size-4" /> Snoozed until {snoozedUntilLabel}
+                            </div>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                                You&apos;re still subscribed — emails pause until then,
+                                and we&apos;ll automatically resume you. Resume early
+                                anytime.
+                            </p>
+                        </div>
+                        <div className="flex flex-wrap gap-3">
+                            <Button
+                                onClick={() => snooze(null, "Welcome back — emails resumed.")}
+                                disabled={update.isPending}
+                            >
+                                <Play className="size-4" /> Resume now
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                onClick={() => changeStatus("unsubscribed", "You've been unsubscribed.")}
+                                disabled={update.isPending}
+                                className="text-muted-foreground"
+                            >
+                                <UserX className="size-4" /> Unsubscribe
+                            </Button>
+                        </div>
+                    </>
+                ) : isSubscribed ? (
                     <>
                         <p className="text-sm text-muted-foreground">
-                            Need a break? Pause to temporarily stop emails without
-                            unsubscribing — resume anytime.
+                            Need a break? Snooze for a set time (we&apos;ll auto-resume
+                            you), or pause indefinitely — either way you stay subscribed.
                         </p>
+                        <div className="flex flex-wrap gap-2">
+                            {[2, 4, 8].map((w) => (
+                                <Button
+                                    key={w}
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                        snooze(
+                                            w as 2 | 4 | 8,
+                                            `Snoozed for ${w} weeks — we'll bring you back automatically.`,
+                                        )
+                                    }
+                                    disabled={update.isPending}
+                                >
+                                    <Clock className="size-4" /> Pause {w} weeks
+                                </Button>
+                            ))}
+                        </div>
                         <div className="flex flex-wrap gap-3">
                             <Button
                                 variant="outline"
                                 onClick={() => changeStatus("paused", "Emails paused. Resume anytime.")}
                                 disabled={update.isPending}
                             >
-                                <Pause className="size-4" /> Pause emails
+                                <Pause className="size-4" /> Pause indefinitely
                             </Button>
                             <Button
                                 variant="ghost"
