@@ -863,6 +863,11 @@ export const adminDashboardRouter = router({
                     dateMs: r.dateMs,
                     // Local day-of-month (1..31) for grid placement.
                     day: new Date(r.dateMs).getDate(),
+                    // Overdue = still `scheduled` but its send time has passed
+                    // (a stuck send the cron hasn't picked up). Sent issues are
+                    // never overdue.
+                    overdue:
+                        r.status === "scheduled" && r.dateMs < now.getTime(),
                 }));
 
             // Upcoming scheduled queue (next 5), independent of the viewed
@@ -875,10 +880,13 @@ export const adminDashboardRouter = router({
                     scheduledAt: newsletters.scheduledAt,
                 })
                 .from(newsletters)
+                // Include ALL scheduled issues with a send time (future AND
+                // past-but-still-scheduled), so stuck/overdue sends surface in
+                // the queue instead of silently vanishing from view.
                 .where(
                     and(
                         eq(newsletters.status, "scheduled"),
-                        gte(newsletters.scheduledAt, now)
+                        isNotNull(newsletters.scheduledAt)
                     )
                 )
                 .orderBy(asc(newsletters.scheduledAt))
@@ -891,6 +899,8 @@ export const adminDashboardRouter = router({
                     slug: r.slug,
                     subject: r.subject,
                     dateMs: r.scheduledAt!.getTime(),
+                    // Overdue = a scheduled send whose time has already passed.
+                    overdue: r.scheduledAt!.getTime() < now.getTime(),
                 }));
 
             return {

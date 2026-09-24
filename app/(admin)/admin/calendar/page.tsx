@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/trpc/client";
-import { CalendarDays, ChevronLeft, ChevronRight, Send, Clock } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Send, Clock, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -127,13 +127,24 @@ export default function CalendarPage() {
                         <ul className="divide-y">
                             {data.upcoming.map((u) => (
                                 <li key={u.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                                    <Link
-                                        href={`/admin/newsletters/${u.id}`}
-                                        className="truncate font-medium hover:text-[#ff5c5c]"
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <Link
+                                            href={`/admin/newsletters/${u.id}`}
+                                            className="truncate font-medium hover:underline"
+                                        >
+                                            {u.subject}
+                                        </Link>
+                                        {u.overdue && (
+                                            <span className="eyebrow inline-flex shrink-0 items-center gap-1 border border-destructive px-1.5 py-0.5 text-[10px] text-destructive">
+                                                <AlertTriangle className="size-3" /> Overdue
+                                            </span>
+                                        )}
+                                    </div>
+                                    <span
+                                        className={`shrink-0 ${
+                                            u.overdue ? "text-destructive" : "text-muted-foreground"
+                                        }`}
                                     >
-                                        {u.subject}
-                                    </Link>
-                                    <span className="shrink-0 text-muted-foreground">
                                         {formatTime(u.dateMs)}
                                     </span>
                                 </li>
@@ -142,6 +153,19 @@ export default function CalendarPage() {
                     ) : (
                         <p className="text-sm text-muted-foreground">
                             No upcoming scheduled issues.
+                        </p>
+                    )}
+                    {data && data.upcoming.some((u) => u.overdue) && (
+                        <p className="mt-3 flex items-center gap-1.5 text-xs text-destructive">
+                            <AlertTriangle className="size-3.5" />
+                            <span>
+                                Overdue sends are past their scheduled time but
+                                still queued.{" "}
+                                <Link href="/admin/dashboard" className="underline">
+                                    See Needs attention
+                                </Link>
+                                .
+                            </span>
                         </p>
                     )}
                 </CardContent>
@@ -183,13 +207,13 @@ export default function CalendarPage() {
                                         key={cell}
                                         className={`min-h-20 rounded-md border p-1.5 ${
                                             isToday
-                                                ? "border-[#ff5c5c] ring-1 ring-[#ff5c5c]/40"
+                                                ? "border-primary ring-1 ring-ring/40"
                                                 : "border-border"
                                         }`}
                                     >
                                         <div
                                             className={`mb-1 text-xs font-medium ${
-                                                isToday ? "text-[#ff5c5c]" : "text-muted-foreground"
+                                                isToday ? "text-foreground" : "text-muted-foreground"
                                             }`}
                                         >
                                             {dayNum}
@@ -197,19 +221,29 @@ export default function CalendarPage() {
                                         <div className="space-y-1">
                                             {dayItems.map((item) => {
                                                 const sent = item.status === "sent";
+                                                const overdue = item.overdue;
+                                                const state = sent
+                                                    ? "sent"
+                                                    : overdue
+                                                    ? "overdue"
+                                                    : "scheduled";
                                                 return (
                                                     <Link
                                                         key={item.id}
                                                         href={`/admin/newsletters/${item.id}`}
-                                                        title={`${item.subject} — ${sent ? "sent" : "scheduled"}`}
-                                                        className={`flex items-center gap-1 rounded px-1 py-0.5 text-[11px] leading-tight ${
+                                                        title={`${item.subject} — ${state}`}
+                                                        className={`flex items-center gap-1 rounded px-1 py-0.5 text-[11px] leading-tight hover:opacity-80 ${
                                                             sent
                                                                 ? "bg-muted text-foreground/80"
-                                                                : "bg-[#ff5c5c]/15 text-[#ff5c5c]"
-                                                        } hover:opacity-80`}
+                                                                : overdue
+                                                                ? "border border-destructive bg-destructive/10 text-destructive"
+                                                                : "bg-muted/60 text-foreground/90"
+                                                        }`}
                                                     >
                                                         {sent ? (
                                                             <Send className="size-3 shrink-0" />
+                                                        ) : overdue ? (
+                                                            <AlertTriangle className="size-3 shrink-0" />
                                                         ) : (
                                                             <Clock className="size-3 shrink-0" />
                                                         )}
@@ -225,9 +259,12 @@ export default function CalendarPage() {
                     )}
 
                     {/* Legend */}
-                    <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+                    <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
-                            <Clock className="size-3 text-[#ff5c5c]" /> Scheduled
+                            <Clock className="size-3" /> Scheduled
+                        </span>
+                        <span className="flex items-center gap-1 text-destructive">
+                            <AlertTriangle className="size-3" /> Overdue
                         </span>
                         <span className="flex items-center gap-1">
                             <Send className="size-3" /> Sent
