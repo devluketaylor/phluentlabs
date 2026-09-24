@@ -36,6 +36,64 @@ export const adminAuditRouter = router({
             return { rows, total: totalRow[0]?.total ?? 0 };
         }),
 
+    // CSV export of the audit trail honouring the same action/actor filters the
+    // page exposes. Read-only aggregation over the audit_log table — no schema,
+    // no PII beyond the actor email/action the admin already sees on-screen.
+    // Cap at a generous bound so a huge trail can't blow up the response.
+    exportCsv: adminProcedure
+        .input(
+            z.object({
+                action: z.string().min(1).optional(),
+                actorId: z.string().min(1).optional(),
+            })
+        )
+        .query(async ({ input, ctx }) => {
+            const parts = [];
+            if (input.action) parts.push(eq(auditLog.action, input.action));
+            if (input.actorId) parts.push(eq(auditLog.actorId, input.actorId));
+            const where = parts.length ? and(...parts) : undefined;
+
+            const rows = await ctx.db
+                .select()
+                .from(auditLog)
+                .where(where)
+                .orderBy(desc(auditLog.createdAt))
+                .limit(50000);
+
+            const escape = (val: unknown) => {
+                const s = val == null ? "" : String(val);
+                return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+            };
+            const header = [
+                "created_at",
+                "actor_email",
+                "actor_id",
+                "action",
+                "target_type",
+                "target_id",
+                "metadata",
+            ];
+            const lines = [header.join(",")];
+            for (const r of rows) {
+                const when =
+                    r.createdAt instanceof Date
+                        ? r.createdAt.toISOString()
+                        : String(r.createdAt ?? "");
+                lines.push(
+                    [
+                        escape(when),
+                        escape(r.actorEmail),
+                        escape(r.actorId),
+                        escape(r.action),
+                        escape(r.targetType),
+                        escape(r.targetId),
+                        escape(r.metadata == null ? "" : JSON.stringify(r.metadata)),
+                    ].join(",")
+                );
+            }
+            return { csv: lines.join("\n"), count: rows.length };
+        }),
+
     // Distinct actions currently present, for the action filter dropdown.
     actions: adminProcedure.query(async ({ ctx }) => {
         const rows = await ctx.db

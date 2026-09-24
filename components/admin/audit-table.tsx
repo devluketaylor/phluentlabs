@@ -2,6 +2,8 @@
 
 import { trpc } from "@/trpc/client";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
     Select,
@@ -68,6 +70,37 @@ export const AuditTable = () => {
         { placeholderData: (prev) => prev }
     );
 
+    const utils = trpc.useUtils();
+    const [exporting, setExporting] = useState(false);
+    const handleExport = async () => {
+        setExporting(true);
+        try {
+            const res = await utils.adminAudit.exportCsv.fetch({
+                action: action === "all" ? undefined : action,
+                actorId: actorId === "all" ? undefined : actorId,
+            });
+            if (res.count === 0) {
+                toast.info("No audit entries to export.");
+                return;
+            }
+            const blob = new Blob([res.csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            const stamp = new Date().toISOString().slice(0, 10);
+            a.download = `audit-log-${stamp}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            toast.success(`Exported ${res.count} entr${res.count === 1 ? "y" : "ies"}`);
+        } catch (err: any) {
+            toast.error(err?.message || "Export failed");
+        } finally {
+            setExporting(false);
+        }
+    };
+
     const actionsQuery = trpc.adminAudit.actions.useQuery();
     const actorsQuery = trpc.adminAudit.actors.useQuery();
     const availableActions = actionsQuery.data?.actions ?? [];
@@ -113,6 +146,14 @@ export const AuditTable = () => {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                        variant="secondary"
+                        onClick={handleExport}
+                        disabled={exporting}
+                    >
+                        <Download className="size-4" />
+                        {exporting ? "Exporting…" : "Export CSV"}
+                    </Button>
                     <Button
                         variant="secondary"
                         onClick={() => list.refetch()}
