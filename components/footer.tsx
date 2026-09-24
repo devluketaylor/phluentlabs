@@ -17,6 +17,7 @@ const navGroups: { heading: string; links: { label: string; href: string; extern
         links: [
             { label: "API docs", href: "/docs/api" },
             { label: "Deliverability", href: "/docs/deliverability" },
+            { label: "Why am I getting this?", href: "/about-emails" },
             { label: "Embed widget", href: "/embed" },
         ],
     },

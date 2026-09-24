@@ -294,12 +294,17 @@ export async function sendNewsletterToSubscribers(
                 const feedbackUrl = new URL("/feedback", appUrl);
                 if (newsletter.slug) feedbackUrl.searchParams.set("issue", newsletter.slug);
 
+                // Sender-transparency / trust page ("why am I getting this?").
+                const aboutUrl = new URL("/about-emails", appUrl);
+
                 const html = `${newsletter.html}<p style="margin-top:32px;font-size:13px;line-height:1.6;color:#666;">
                     Got a thought on this issue? Just hit reply — a real person reads every response — or
-                    <a href="${feedbackUrl.toString()}" style="color:#ff5c5c;">send a note here</a>.
+                    <a href="${feedbackUrl.toString()}" style="color:#111;text-decoration:underline;">send a note here</a>.
                 </p>
                 <p style="margin-top:12px;font-size:12px;color:#888;">
-                    <a href="${unsubUrl.toString()}">Unsubscribe</a>
+                    <a href="${unsubUrl.toString()}" style="color:#888;">Unsubscribe</a>
+                    &nbsp;·&nbsp;
+                    <a href="${aboutUrl.toString()}" style="color:#888;">Why am I getting this?</a>
                 </p>`;
 
                 return {
