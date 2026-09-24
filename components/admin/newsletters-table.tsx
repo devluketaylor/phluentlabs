@@ -34,7 +34,7 @@ import { IssueLintPanel, SendReadinessChecklist } from "@/components/admin/issue
 import { SubjectMeter } from "@/components/admin/subject-meter";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
-import { BarChart3, Link2, Check, Copy, UserRound } from "lucide-react";
+import { BarChart3, Link2, Check, Copy, UserRound, RotateCcw } from "lucide-react";
 
 type NewsletterStatus = "draft" | "scheduled" | "sent";
 
@@ -946,6 +946,20 @@ function EditNewsletterDialog({
 
     const saveDraft = trpc.adminNewsletter.saveDraft.useMutation();
 
+    // Recovery affordance (Tier 14 #5): the version the editor initialized with
+    // for this open. On reopen we re-fetch the server row; if its `updatedAt` is
+    // newer (a tab closed mid-edit, or a concurrent autosave elsewhere) we offer
+    // a one-click "load latest" instead of silently showing stale content.
+    const initializedAtRef = useRef<string | null>(null);
+    const [recovery, setRecovery] = useState<{
+        subject: string;
+        subjectB: string | null;
+        preheader: string | null;
+        html: string;
+        slug: string | null;
+        updatedAt: string | null;
+    } | null>(null);
+
     useEffect(() => {
         if (!open) return;
         setSubject(newsletter.subject);
@@ -958,11 +972,64 @@ function EditNewsletterDialog({
         setSaveState("idle");
         setLastSaved(null);
         setSaveError(null);
+        setRecovery(null);
         dirtyRef.current = false;
-        expectedUpdatedAtRef.current = newsletter.updatedAt
+        const initIso = newsletter.updatedAt
             ? new Date(newsletter.updatedAt).toISOString()
-            : undefined;
+            : null;
+        initializedAtRef.current = initIso;
+        expectedUpdatedAtRef.current = initIso ?? undefined;
     }, [open, newsletter]);
+
+    // On open, re-fetch the current server row. If the editor has NOT been
+    // edited yet this open (dirtyRef false — so we won't clobber live typing)
+    // and the server's updatedAt is newer than the version we initialized with,
+    // stash it as a recoverable "latest" version and surface the banner.
+    const freshQuery = trpc.adminNewsletter.getFresh.useQuery(
+        { id: newsletter.id },
+        { enabled: open, refetchOnWindowFocus: false, staleTime: 0 }
+    );
+    useEffect(() => {
+        if (!open) return;
+        const data = freshQuery.data;
+        if (!data || !data.updatedAt) return;
+        // Don't interrupt an in-progress edit in this tab.
+        if (dirtyRef.current) return;
+        const initIso = initializedAtRef.current;
+        const serverTime = new Date(data.updatedAt).getTime();
+        const initTime = initIso ? new Date(initIso).getTime() : 0;
+        if (serverTime > initTime) {
+            setRecovery({
+                subject: data.subject,
+                subjectB: data.subjectB ?? null,
+                preheader: data.preheader ?? null,
+                html: data.html,
+                slug: data.slug ?? null,
+                updatedAt: data.updatedAt,
+            });
+        } else {
+            setRecovery(null);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [freshQuery.data, open]);
+
+    // Load the newer server version into the editor and dismiss the banner.
+    const loadLatest = useCallback(() => {
+        if (!recovery) return;
+        setSubject(recovery.subject);
+        setSubjectB(recovery.subjectB ?? "");
+        setPreheader(recovery.preheader ?? "");
+        setHtml(recovery.html);
+        if (recovery.slug) setSlug(recovery.slug);
+        // The loaded content now matches the server version — sync bookkeeping so
+        // it's not re-flagged and future autosaves use the right base version.
+        initializedAtRef.current = recovery.updatedAt;
+        expectedUpdatedAtRef.current = recovery.updatedAt ?? undefined;
+        if (recovery.updatedAt) setLastSaved(new Date(recovery.updatedAt));
+        dirtyRef.current = false;
+        setRecovery(null);
+        toast.success("Loaded the latest autosaved version");
+    }, [recovery]);
 
     const runAutosave = useCallback(() => {
         saveDraft.mutate(
@@ -1007,6 +1074,9 @@ function EditNewsletterDialog({
     // doesn't immediately trigger an autosave.
     const markDirty = () => {
         dirtyRef.current = true;
+        // The user is actively editing this tab — stop offering to overwrite
+        // their work with the fetched "latest" version.
+        if (recovery) setRecovery(null);
     };
 
     const savedLabel =
@@ -1086,6 +1156,29 @@ function EditNewsletterDialog({
                         </div>
                     )}
                 </DialogHeader>
+
+                {recovery && (
+                    <div className="flex flex-col gap-2 border border-border bg-muted/40 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-start gap-2">
+                            <RotateCcw className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                            <span className="text-muted-foreground">
+                                A newer autosaved version exists
+                                {recovery.updatedAt
+                                    ? ` (saved ${new Date(recovery.updatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })})`
+                                    : ""}
+                                . You may be viewing an older copy.
+                            </span>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => setRecovery(null)}>
+                                Dismiss
+                            </Button>
+                            <Button size="sm" onClick={loadLatest}>
+                                Load latest
+                            </Button>
+                        </div>
+                    </div>
+                )}
 
                 <div className="space-y-4">
                     <div className="grid gap-4 sm:grid-cols-2">

@@ -58,6 +58,38 @@ export const adminNewsletterRouter = router({
             return { items, total };
         }),
 
+    // Lightweight single-issue re-fetch used by the editor's "restore last
+    // autosaved draft" recovery affordance. On reopen the dialog fetches the
+    // current server state; if its `updatedAt` is newer than the version the
+    // editor initialized with (e.g. a tab closed mid-edit, or a concurrent
+    // autosave elsewhere), the client offers a one-click "load latest". Returns
+    // only the fields the editor hydrates from.
+    getFresh: adminProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .query(async ({ input, ctx }) => {
+            const [row] = await ctx.db
+                .select({
+                    id: newsletters.id,
+                    subject: newsletters.subject,
+                    subjectB: newsletters.subjectB,
+                    preheader: newsletters.preheader,
+                    html: newsletters.html,
+                    slug: newsletters.slug,
+                    status: newsletters.status,
+                    updatedAt: newsletters.updatedAt,
+                })
+                .from(newsletters)
+                .where(eq(newsletters.id, input.id))
+                .limit(1);
+            if (!row) {
+                throw new TRPCError({ code: "NOT_FOUND", message: "Issue not found" });
+            }
+            return {
+                ...row,
+                updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
+            };
+        }),
+
     create: editorProcedure
         .input(
             z.object({
