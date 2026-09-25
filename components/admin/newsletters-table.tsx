@@ -32,6 +32,7 @@ import {
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
 import { IssueLintPanel, SendReadinessChecklist } from "@/components/admin/issue-lint-panel";
 import { SubjectMeter } from "@/components/admin/subject-meter";
+import { buildSubjectVariants } from "@/lib/subject-variants";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
 import { BarChart3, Link2, Check, Copy, UserRound, Users, RotateCcw } from "lucide-react";
@@ -1307,6 +1308,25 @@ function EditNewsletterDialog({
                             disabled={isSent}
                         />
                         {subjectB.trim() ? <SubjectMeter subject={subjectB} label="Subject B" /> : null}
+                        {!isSent && subject.trim() && !subjectB.trim() ? (
+                            <div className="space-y-1.5">
+                                <div className="text-xs text-muted-foreground">Suggest a variant from Subject A:</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {buildSubjectVariants(subject).map((v) => (
+                                        <Button
+                                            key={v.kind}
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            title={`${v.hint}: ${v.value}`}
+                                            onClick={() => { markDirty(); setSubjectB(v.value); }}
+                                        >
+                                            {v.label}
+                                        </Button>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : null}
                         <p className="text-xs text-muted-foreground">
                             {isSent
                                 ? "This issue has already been sent — the A/B split is locked in."
