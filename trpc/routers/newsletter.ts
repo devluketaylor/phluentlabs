@@ -17,13 +17,14 @@ import { shareClicks } from "@/db/schemas/share-clicks";
 import { issueReactions } from "@/db/schemas/issue-reactions";
 import { feedback } from "@/db/schemas/feedback";
 import { publications } from "@/db/schemas/publications";
-import { and, arrayContains, count, desc, eq, ilike, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, arrayContains, count, desc, eq, ilike, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { signPreviewToken } from "@/lib/preview-token";
 import { TRPCError } from "@trpc/server";
 import { sendNewsletterToSubscribers } from "@/lib/send-newsletter";
 import { resolveCohortSubscribers } from "@/lib/engagement-cohort";
+import { resolveNonOpenerSubscribers, assertSentSource } from "@/lib/non-openers";
 import { activeSubscriberWhere, autoResumeElapsedSnoozes } from "@/lib/snooze";
 import { recordAudit } from "@/lib/audit";
 import { user } from "@/db/schemas/auth";
@@ -432,19 +433,34 @@ export const adminNewsletterRouter = router({
                 // Optional engagement cohort (Tier 7 #2 win-back): target only
                 // the at-risk or dormant segment. Combines with tag if both set.
                 cohort: z.enum(["atRisk", "dormant"]).nullish(),
+                // Resend-to-non-openers (Tier 17 #1): target only subscribers
+                // who were delivered this SOURCE (already-sent) issue but never
+                // opened it. Combines with tag if both set.
+                nonOpenersOf: z.string().min(1).nullish(),
             })
         )
         .mutation(async ({ input, ctx }) => {
             try {
+                // Guard: a resend-to-non-openers source must be an already-sent
+                // issue (a draft/scheduled issue has no delivery/open data yet).
+                if (input.nonOpenersOf) {
+                    await assertSentSource(input.nonOpenersOf);
+                }
                 const { sent } = await sendNewsletterToSubscribers(input.id, {
                     tag: input.tag,
                     cohort: input.cohort,
+                    nonOpenersOf: input.nonOpenersOf,
                 });
                 await recordAudit(ctx, {
                     action: "newsletter.send",
                     targetType: "newsletter",
                     targetId: input.id,
-                    metadata: { sent, tag: input.tag ?? null, cohort: input.cohort ?? null },
+                    metadata: {
+                        sent,
+                        tag: input.tag ?? null,
+                        cohort: input.cohort ?? null,
+                        nonOpenersOf: input.nonOpenersOf ?? null,
+                    },
                 });
                 return { ok: true, sent };
             } catch (e) {
@@ -652,11 +668,13 @@ export const adminNewsletterRouter = router({
             z.object({
                 tag: z.string().trim().min(1).nullish(),
                 cohort: z.enum(["atRisk", "dormant"]).nullish(),
+                nonOpenersOf: z.string().min(1).nullish(),
             })
         )
         .query(async ({ input, ctx }) => {
             const tag = input.tag?.trim() || null;
             const cohort = input.cohort ?? null;
+            const nonOpenersOf = input.nonOpenersOf?.trim() || null;
             // Auto-resume elapsed snoozes so the preview count reflects who will
             // actually receive the send (matches the send path exactly).
             await autoResumeElapsedSnoozes();
@@ -665,13 +683,16 @@ export const adminNewsletterRouter = router({
                 ? and(activeSubscriberWhere(), arrayContains(subscribers.tags, [tag]))
                 : activeSubscriberWhere();
 
-            // When a cohort is selected, resolve it to a subscriber-id set and
-            // intersect with the (confirmed + optional-tag) base audience — the
-            // exact same resolution the send path uses, so the preview count
-            // matches what will actually be sent.
-            if (cohort) {
-                const [members, baseRows] = await Promise.all([
-                    resolveCohortSubscribers(cohort),
+            // When a cohort AND/OR a non-openers source is selected, resolve each
+            // to a subscriber-id set and intersect with the (confirmed +
+            // optional-tag) base audience — the exact same resolution the send
+            // path uses, so the preview count matches what will actually be sent.
+            if (cohort || nonOpenersOf) {
+                const [cohortMembers, nonOpenerMembers, baseRows] = await Promise.all([
+                    cohort ? resolveCohortSubscribers(cohort) : Promise.resolve(null),
+                    nonOpenersOf
+                        ? resolveNonOpenerSubscribers(nonOpenersOf)
+                        : Promise.resolve(null),
                     ctx.db
                         .select({
                             id: subscribers.id,
@@ -683,11 +704,21 @@ export const adminNewsletterRouter = router({
                         .where(where)
                         .orderBy(subscribers.email),
                 ]);
-                const cohortIds = new Set(members.map((m) => m.id));
-                const matched = baseRows.filter((r) => cohortIds.has(r.id));
+                const cohortIds = cohortMembers
+                    ? new Set(cohortMembers.map((m) => m.id))
+                    : null;
+                const nonOpenerIds = nonOpenerMembers
+                    ? new Set(nonOpenerMembers.map((m) => m.id))
+                    : null;
+                const matched = baseRows.filter(
+                    (r) =>
+                        (!cohortIds || cohortIds.has(r.id)) &&
+                        (!nonOpenerIds || nonOpenerIds.has(r.id)),
+                );
                 return {
                     tag,
                     cohort,
+                    nonOpenersOf,
                     count: matched.length,
                     sample: matched.slice(0, 5).map(({ email, firstName, lastName }) => ({
                         email,
@@ -711,7 +742,45 @@ export const adminNewsletterRouter = router({
                     .limit(5),
             ]);
 
-            return { tag, cohort, count: total, sample };
+            return { tag, cohort, nonOpenersOf: null, count: total, sample };
+        }),
+
+    // Resend-to-non-openers picker source (Tier 17 #1): the recently-SENT
+    // issues an editor can resend to non-openers of, each with how many
+    // delivered recipients never opened it. Read-only. Only issues with at
+    // least one non-opener are worth showing.
+    sentIssuesForResend: adminProcedure
+        .input(z.object({ limit: z.number().int().min(1).max(50).optional() }).optional())
+        .query(async ({ input, ctx }) => {
+            const limit = input?.limit ?? 20;
+            // Per-issue non-opener count over delivered ('sent') recipient rows.
+            const rows = await ctx.db
+                .select({
+                    id: newsletters.id,
+                    subject: newsletters.subject,
+                    sentAt: newsletters.sentAt,
+                    nonOpeners: count(
+                        sql`CASE WHEN ${newsletterRecipients.status} = 'sent' AND ${newsletterRecipients.openedAt} IS NULL THEN 1 END`,
+                    ),
+                })
+                .from(newsletters)
+                .leftJoin(
+                    newsletterRecipients,
+                    eq(newsletterRecipients.newsletterId, newsletters.id),
+                )
+                .where(eq(newsletters.status, "sent"))
+                .groupBy(newsletters.id, newsletters.subject, newsletters.sentAt)
+                .orderBy(desc(newsletters.sentAt), desc(newsletters.createdAt))
+                .limit(200);
+            return rows
+                .filter((r) => Number(r.nonOpeners) > 0)
+                .slice(0, limit)
+                .map((r) => ({
+                    id: r.id,
+                    subject: r.subject,
+                    sentAt: r.sentAt,
+                    nonOpeners: Number(r.nonOpeners),
+                }));
         }),
 
     // Schedule (or reschedule) a newsletter to send at a future time. A cron

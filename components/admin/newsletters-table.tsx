@@ -10,7 +10,9 @@ import { Input } from "@/components/ui/input";
 import {
     Select,
     SelectContent,
+    SelectGroup,
     SelectItem,
+    SelectLabel,
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
@@ -222,7 +224,7 @@ export function NewslettersTable() {
                                         {n.status !== "sent" && (
                                             <SendNewsletterDialog
                                                 newsletter={{ id: n.id, subject: n.subject, subjectB: n.subjectB ?? null, preheader: n.preheader ?? null, html: n.html }}
-                                                onSend={({ tag, cohort }) => send.mutate({ id: n.id, tag, cohort })}
+                                                onSend={({ tag, cohort, nonOpenersOf }) => send.mutate({ id: n.id, tag, cohort, nonOpenersOf })}
                                                 sending={send.isPending}
                                                 error={send.error?.message}
                                             />
@@ -789,6 +791,10 @@ const COHORT_PREFIX = "__cohort__:";
 const COHORT_ATRISK = `${COHORT_PREFIX}atRisk`;
 const COHORT_DORMANT = `${COHORT_PREFIX}dormant`;
 
+// Resend-to-non-openers audiences (Tier 17 #1). Prefixed with the source
+// issue id so they never collide with a tag/cohort value.
+const NONOPENER_PREFIX = "__nonopeners__:";
+
 // A/B subject-line split: the send path splits the audience ~50/50 across the
 // two subjects deterministically per subscriber. Preview that split for a total
 // recipient count so the confirmation summary can show it before send.
@@ -863,17 +869,24 @@ function SendNewsletterDialog({
     error,
 }: {
     newsletter: { id: string; subject: string; subjectB?: string | null; preheader?: string | null; html: string };
-    onSend: (audience: { tag: string | null; cohort: "atRisk" | "dormant" | null }) => void;
+    onSend: (audience: {
+        tag: string | null;
+        cohort: "atRisk" | "dormant" | null;
+        nonOpenersOf: string | null;
+    }) => void;
     sending: boolean;
     error?: string;
 }) {
     const [open, setOpen] = useState(false);
     // "__all__" = every confirmed subscriber; a "__cohort__:*" value = an
-    // engagement cohort; any other value = that tag/segment.
+    // engagement cohort; a "__nonopeners__:<id>" value = resend to non-openers
+    // of that sent issue; any other value = that tag/segment.
     const [audience, setAudience] = useState<string>(ALL_AUDIENCE);
     const isCohort = audience.startsWith(COHORT_PREFIX);
+    const isNonOpeners = audience.startsWith(NONOPENER_PREFIX);
     const cohort = isCohort ? (audience.slice(COHORT_PREFIX.length) as "atRisk" | "dormant") : null;
-    const tag = isCohort || audience === ALL_AUDIENCE ? null : audience;
+    const nonOpenersOf = isNonOpeners ? audience.slice(NONOPENER_PREFIX.length) : null;
+    const tag = isCohort || isNonOpeners || audience === ALL_AUDIENCE ? null : audience;
 
     // Reset the audience each time the dialog opens so it never carries a stale
     // tag from a previous issue.
@@ -888,21 +901,33 @@ function SendNewsletterDialog({
         {},
         { enabled: open },
     );
+    // Recently-sent issues (with a non-opener count) the editor can resend to.
+    const resendSources = trpc.adminNewsletter.sentIssuesForResend.useQuery(
+        {},
+        { enabled: open },
+    );
     // Live count + sample of who will actually receive this issue.
     const preview = trpc.adminNewsletter.audiencePreview.useQuery(
-        { tag, cohort },
+        { tag, cohort, nonOpenersOf },
         { enabled: open }
     );
 
     const targetCount = preview.data?.count;
     const emptyTarget = targetCount === 0;
 
+    // The subject of the source issue this resend targets non-openers of.
+    const nonOpenerSource = nonOpenersOf
+        ? resendSources.data?.find((s) => s.id === nonOpenersOf)
+        : undefined;
+
     // Human-readable audience label for the confirmation recap.
     const audienceLabel = cohort
         ? `Win-back — ${cohort === "atRisk" ? "at-risk" : "dormant"} subscribers`
-        : tag
-          ? `Confirmed subscribers tagged “${tag}”`
-          : "All confirmed subscribers";
+        : nonOpenersOf
+          ? `Non-openers of “${nonOpenerSource?.subject ?? "a past issue"}”`
+          : tag
+            ? `Confirmed subscribers tagged “${tag}”`
+            : "All confirmed subscribers";
 
     return (
         <Dialog open={open} onOpenChange={setOpen}>
@@ -931,6 +956,19 @@ function SendNewsletterDialog({
                             <SelectItem value={COHORT_DORMANT}>
                                 Win-back — dormant{typeof cohortCounts.data?.dormant === "number" ? ` (${cohortCounts.data.dormant})` : ""}
                             </SelectItem>
+                            {resendSources.data && resendSources.data.length > 0 && (
+                                <SelectGroup>
+                                    <SelectLabel>Resend to non-openers of…</SelectLabel>
+                                    {resendSources.data.map((s) => (
+                                        <SelectItem
+                                            key={s.id}
+                                            value={`${NONOPENER_PREFIX}${s.id}`}
+                                        >
+                                            {s.subject} ({s.nonOpeners} didn&rsquo;t open)
+                                        </SelectItem>
+                                    ))}
+                                </SelectGroup>
+                            )}
                             {tagsQuery.data?.tags.map((t) => (
                                 <SelectItem key={t.tag} value={t.tag}>
                                     Tag: {t.tag} ({t.count})
@@ -942,7 +980,7 @@ function SendNewsletterDialog({
                         {preview.isFetching
                             ? "Resolving recipients…"
                             : typeof targetCount === "number"
-                              ? `Will send to ${targetCount} confirmed subscriber${targetCount === 1 ? "" : "s"}${cohort ? ` in the ${cohort === "atRisk" ? "at-risk" : "dormant"} win-back segment` : tag ? ` tagged \u201c${tag}\u201d` : ""}.`
+                              ? `Will send to ${targetCount} confirmed subscriber${targetCount === 1 ? "" : "s"}${cohort ? ` in the ${cohort === "atRisk" ? "at-risk" : "dormant"} win-back segment` : nonOpenersOf ? " who didn\u2019t open the original" : tag ? ` tagged \u201c${tag}\u201d` : ""}.`
                               : ""}
                     </p>
                     {isCohort && (
@@ -950,6 +988,11 @@ function SendNewsletterDialog({
                             {cohort === "dormant"
                                 ? "Confirmed subscribers sent 2+ issues who have never opened one — a last nudge before churn."
                                 : "Confirmed subscribers who used to open but have gone quiet for 60+ days."}
+                        </p>
+                    )}
+                    {isNonOpeners && (
+                        <p className="text-xs text-muted-foreground">
+                            Subscribers who were delivered that issue but never opened it — and are still on the list. A good time to try a fresher subject line.
                         </p>
                     )}
                     {preview.data?.sample && preview.data.sample.length > 0 && (
@@ -984,7 +1027,7 @@ function SendNewsletterDialog({
                     <Button
                         disabled={sending || preview.isFetching || emptyTarget}
                         onClick={() => {
-                            onSend({ tag, cohort });
+                            onSend({ tag, cohort, nonOpenersOf });
                             setOpen(false);
                         }}
                     >

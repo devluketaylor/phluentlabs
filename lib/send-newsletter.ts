@@ -8,6 +8,7 @@ import { Resend } from "resend";
 import { signSubscriberToken } from "@/lib/subscriber-token";
 import { assignVariant } from "@/lib/ab-split";
 import { resolveCohortSubscribers, type EngagementCohort } from "@/lib/engagement-cohort";
+import { resolveNonOpenerSubscribers } from "@/lib/non-openers";
 import { activeSubscriberWhere, autoResumeElapsedSnoozes } from "@/lib/snooze";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -101,10 +102,18 @@ async function sendBatchWithRetry(
  */
 export async function sendNewsletterToSubscribers(
     newsletterId: string,
-    opts?: { tag?: string | null; cohort?: EngagementCohort | null },
+    opts?: {
+        tag?: string | null;
+        cohort?: EngagementCohort | null;
+        // Resend-to-non-openers: restrict the audience to subscribers who were
+        // delivered this SOURCE issue but never opened it. Combines with
+        // tag/cohort/publication via id-set intersection.
+        nonOpenersOf?: string | null;
+    },
 ): Promise<{ sent: number; failed: number; alreadySent: number }> {
     const tag = opts?.tag?.trim() || null;
     const cohort = opts?.cohort ?? null;
+    const nonOpenersOf = opts?.nonOpenersOf?.trim() || null;
     const [newsletter] = await db
         .select()
         .from(newsletters)
@@ -167,6 +176,20 @@ export async function sendNewsletterToSubscribers(
         }
     }
 
+    // Resend-to-non-openers audience: resolve the source issue's delivered
+    // non-openers to an id-set. Like the cohort, it's an aggregate over the
+    // recipients table, so we intersect id-sets in JS to keep the definitions
+    // decoupled + testable. It never re-reaches anyone who has since left the
+    // list because the base audience is still confirmed-and-active only.
+    let nonOpenerIds: Set<string> | null = null;
+    if (nonOpenersOf) {
+        const members = await resolveNonOpenerSubscribers(nonOpenersOf);
+        nonOpenerIds = new Set(members.map((m) => m.id));
+        if (nonOpenerIds.size === 0) {
+            throw new Error("Everyone who was sent that issue has opened it — no non-openers to resend to");
+        }
+    }
+
     const resolvedSubscribers = publicationJoinRequired
         ? await db
               .select({ id: subscribers.id, email: subscribers.email })
@@ -186,13 +209,20 @@ export async function sendNewsletterToSubscribers(
               .from(subscribers)
               .where(audienceWhere);
 
-    // Apply the cohort filter in JS (the cohort is itself an aggregate query;
-    // intersecting id-sets keeps the two definitions decoupled and testable).
-    const allSubscribers = cohortIds
-        ? resolvedSubscribers.filter((s) => cohortIds!.has(s.id))
-        : resolvedSubscribers;
+    // Apply the cohort + non-opener filters in JS (each is itself an aggregate
+    // query; intersecting id-sets keeps the definitions decoupled and testable).
+    const allSubscribers = resolvedSubscribers.filter(
+        (s) =>
+            (!cohortIds || cohortIds.has(s.id)) &&
+            (!nonOpenerIds || nonOpenerIds.has(s.id)),
+    );
 
     if (allSubscribers.length === 0) {
+        if (nonOpenersOf) {
+            throw new Error(
+                "No non-openers still on the list match this send (they may have unsubscribed or been suppressed since)",
+            );
+        }
         if (cohort) {
             throw new Error(
                 cohort === "dormant"
