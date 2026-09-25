@@ -28,6 +28,7 @@ import { resolveNonOpenerSubscribers, assertSentSource } from "@/lib/non-openers
 import { activeSubscriberWhere, autoResumeElapsedSnoozes } from "@/lib/snooze";
 import { recordAudit } from "@/lib/audit";
 import { user } from "@/db/schemas/auth";
+import { auditLog } from "@/db/schemas/audit-log";
 import { normalizeRole } from "@/lib/roles";
 
 // Shared test-email HTML: mirrors the real send's footer so the test matches
@@ -781,6 +782,62 @@ export const adminNewsletterRouter = router({
                     sentAt: r.sentAt,
                     nonOpeners: Number(r.nonOpeners),
                 }));
+        }),
+
+    // Resend history for a single issue (Tier 17 #3): every time this issue was
+    // used as the SOURCE of a resend-to-non-openers send. Read-only over the
+    // append-only audit log — a `newsletter.send` whose metadata.nonOpenersOf
+    // matches this issue id means "a fresh draft was sent to the people who
+    // never opened THIS issue". Surfaced on the analytics page so an editor can
+    // see whether (and how many times) they've already resent, and how many it
+    // reached — avoiding an accidental double-resend. No schema change: the
+    // audit metadata already records `nonOpenersOf` + `sent` count.
+    resendHistory: adminProcedure
+        .input(z.object({ id: z.string().min(1) }))
+        .query(async ({ input, ctx }) => {
+            const rows = await ctx.db
+                .select({
+                    id: auditLog.id,
+                    actorEmail: auditLog.actorEmail,
+                    metadata: auditLog.metadata,
+                    createdAt: auditLog.createdAt,
+                })
+                .from(auditLog)
+                .where(
+                    and(
+                        eq(auditLog.action, "newsletter.send"),
+                        // JSON text match on the recorded source-issue id.
+                        sql`${auditLog.metadata} ->> 'nonOpenersOf' = ${input.id}`,
+                    ),
+                )
+                .orderBy(desc(auditLog.createdAt));
+
+            const events = rows.map((row) => {
+                const meta = (row.metadata ?? {}) as {
+                    sent?: unknown;
+                    nonOpenersOf?: unknown;
+                };
+                const sentRaw = meta.sent;
+                const sent =
+                    typeof sentRaw === "number"
+                        ? sentRaw
+                        : typeof sentRaw === "string"
+                          ? Number(sentRaw) || 0
+                          : 0;
+                return {
+                    id: row.id,
+                    actorEmail: row.actorEmail,
+                    sent,
+                    createdAt: row.createdAt,
+                };
+            });
+
+            return {
+                count: events.length,
+                totalReached: events.reduce((acc, e) => acc + e.sent, 0),
+                lastResendAt: events[0]?.createdAt ?? null,
+                events,
+            };
         }),
 
     // Schedule (or reschedule) a newsletter to send at a future time. A cron

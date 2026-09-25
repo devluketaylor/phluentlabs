@@ -23,6 +23,7 @@ import {
     ThumbsUp,
     MessagesSquare,
     MailX,
+    History,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -75,6 +76,18 @@ export default function NewsletterAnalyticsPage() {
             { id },
             { refetchOnWindowFocus: false, retry: false }
         );
+
+    // Resend history: has this issue already been resent to its non-openers,
+    // and how many did that reach? (Tier 17 #3 — avoid an accidental double
+    // resend.) Only meaningful for sent issues, so gate the fetch on that.
+    const { data: resendData } = trpc.adminNewsletter.resendHistory.useQuery(
+        { id },
+        {
+            enabled: data?.newsletter?.status === "sent",
+            refetchOnWindowFocus: false,
+            retry: false,
+        }
+    );
 
     // One-click "resend to non-openers": duplicate THIS sent issue into a fresh
     // draft (giving the editor a chance to tweak the subject), then hand off to
@@ -140,17 +153,23 @@ export default function NewsletterAnalyticsPage() {
                     </Button>
                     {n?.status === "sent" && (
                         <Button
-                            variant="default"
+                            variant={resendData && resendData.count > 0 ? "secondary" : "default"}
                             onClick={() => duplicate.mutate({ id })}
                             disabled={duplicate.isPending}
-                            title="Duplicate this issue into a fresh draft and resend it only to the subscribers who never opened it"
+                            title={
+                                resendData && resendData.count > 0
+                                    ? `Already resent to non-openers ${resendData.count} ${resendData.count === 1 ? "time" : "times"} (reached ${resendData.totalReached.toLocaleString()}). Resend again only if you're sure.`
+                                    : "Duplicate this issue into a fresh draft and resend it only to the subscribers who never opened it"
+                            }
                         >
                             <MailX className="size-4" />
                             {duplicate.isPending
                                 ? "Preparing…"
-                                : nonOpenerCount !== null
-                                  ? `Resend to non-openers (${nonOpenerCount.toLocaleString()})`
-                                  : "Resend to non-openers"}
+                                : resendData && resendData.count > 0
+                                  ? "Resend again"
+                                  : nonOpenerCount !== null
+                                    ? `Resend to non-openers (${nonOpenerCount.toLocaleString()})`
+                                    : "Resend to non-openers"}
                         </Button>
                     )}
                     <Button
@@ -449,6 +468,61 @@ export default function NewsletterAnalyticsPage() {
                     )}
                 </CardContent>
             </Card>
+
+            {/* Resend history — whether this issue has already been resent to
+                its non-openers, so an editor doesn't accidentally double-resend.
+                Only rendered for sent issues that have at least one resend. */}
+            {n?.status === "sent" && resendData && resendData.count > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                            <History className="size-4 text-primary" />
+                            Resend history
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="flex items-center gap-2">
+                            <MailX className="size-6 text-primary" />
+                            <span className="text-2xl font-semibold">
+                                {resendData.count.toLocaleString()}
+                            </span>
+                            <span className="text-sm text-muted-foreground">
+                                {resendData.count === 1 ? "resend" : "resends"} to
+                                non-openers · reached{" "}
+                                {resendData.totalReached.toLocaleString()} in total
+                            </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            This issue has already been resent to the subscribers who
+                            never opened it. Only resend again if you have a genuinely
+                            fresher reason — repeat resends risk annoying readers.
+                        </p>
+                        <ul className="divide-y text-sm">
+                            {resendData.events.map((ev) => (
+                                <li
+                                    key={ev.id}
+                                    className="flex items-center justify-between gap-3 py-2.5"
+                                >
+                                    <span className="flex items-center gap-2 min-w-0">
+                                        <Send className="size-4 text-muted-foreground shrink-0" />
+                                        <span className="truncate">
+                                            {formatDateTime(ev.createdAt)}
+                                            {ev.actorEmail ? (
+                                                <span className="text-muted-foreground">
+                                                    {" "}· {ev.actorEmail}
+                                                </span>
+                                            ) : null}
+                                        </span>
+                                    </span>
+                                    <span className="font-medium shrink-0">
+                                        {ev.sent.toLocaleString()} sent
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Detail breakdown */}
             <Card>
