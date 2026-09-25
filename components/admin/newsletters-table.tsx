@@ -35,6 +35,7 @@ import {
 import { NewsletterRichEditor } from "@/components/admin/newsletter-rich-editor";
 import { IssueLintPanel, SendReadinessChecklist } from "@/components/admin/issue-lint-panel";
 import { SubjectMeter } from "@/components/admin/subject-meter";
+import { InboxPreview } from "@/components/admin/inbox-preview";
 import { buildSubjectVariants } from "@/lib/subject-variants";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
@@ -1471,6 +1472,7 @@ function EditNewsletterDialog({
                             onChange={(e) => { markDirty(); setPreheader(e.target.value); }}
                             placeholder="Short preview text shown in email clients"
                         />
+                        <InboxPreview subject={subject} preheader={preheader} />
                     </div>
 
                     <div className="space-y-2">
