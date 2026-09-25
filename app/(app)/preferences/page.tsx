@@ -239,15 +239,30 @@ function PreferencesContent() {
                 </div>
             ) : null}
 
-            {/* Per-publication opt-ins — only when there's more than one stream. */}
-            {pubOptIns.data && pubOptIns.data.publications.length > 1 && status !== "unsubscribed" ? (
+            {/* Per-publication opt-ins — a clear one-place summary of every stream
+                the subscriber is (or isn't) receiving, with toggle affordances.
+                Shown whenever at least one publication exists so the always-on
+                primary stream is always visible as a "you're subscribed to"
+                summary — not only when a second stream exists. */}
+            {pubOptIns.data && pubOptIns.data.publications.length >= 1 && status !== "unsubscribed" ? (() => {
+                const pubs = pubOptIns.data.publications;
+                const receivingCount = pubs.filter((p) => p.isPrimary || p.optedIn).length;
+                const hasChoice = pubs.some((p) => !p.isPrimary);
+                return (
                 <div className="mt-6 rounded-xl border bg-card p-4">
-                    <div className="flex items-center gap-2">
-                        <Layers className="size-4 text-primary" />
-                        <p className="text-sm font-medium">Your subscriptions</p>
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                            <Layers className="size-4 text-primary" />
+                            <p className="text-sm font-medium">Your subscriptions</p>
+                        </div>
+                        <span className="shrink-0 inline-flex items-center rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                            Receiving {receivingCount} of {pubs.length}
+                        </span>
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Choose which streams you want to receive.
+                        {hasChoice
+                            ? "Here's every stream we publish — choose which you want to receive."
+                            : "Here's what you're currently receiving."}
                     </p>
                     <div className="mt-3 space-y-2">
                         {pubOptIns.data.publications.map((p) => (
@@ -290,7 +305,8 @@ function PreferencesContent() {
                         ))}
                     </div>
                 </div>
-            ) : null}
+                );
+            })() : null}
 
             {/* Name editor */}
             <div className="mt-6 space-y-4">
