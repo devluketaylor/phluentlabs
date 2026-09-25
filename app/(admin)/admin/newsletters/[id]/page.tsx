@@ -22,9 +22,11 @@ import {
     Share2,
     ThumbsUp,
     MessagesSquare,
+    MailX,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 function formatDateTime(d: Date | string | null | undefined) {
     if (!d) return "—";
@@ -66,12 +68,32 @@ function StatCard({
 export default function NewsletterAnalyticsPage() {
     const params = useParams<{ id: string }>();
     const id = params.id;
+    const router = useRouter();
 
     const { data, isLoading, isError, error, refetch, isFetching } =
         trpc.adminNewsletter.analytics.useQuery(
             { id },
             { refetchOnWindowFocus: false, retry: false }
         );
+
+    // One-click "resend to non-openers": duplicate THIS sent issue into a fresh
+    // draft (giving the editor a chance to tweak the subject), then hand off to
+    // the newsletters table which auto-opens the new draft's Send dialog with
+    // the "non-openers of this issue" audience pre-selected.
+    const duplicate = trpc.adminNewsletter.duplicate.useMutation({
+        onSuccess: (res) => {
+            const draftId = (res as { id?: string } | undefined)?.id;
+            if (!draftId) {
+                toast.error("Could not create the resend draft.");
+                return;
+            }
+            toast.success("Draft created \u2014 resending to non-openers");
+            router.push(
+                `/admin/newsletters?draft=${encodeURIComponent(draftId)}&resend=${encodeURIComponent(id)}`,
+            );
+        },
+        onError: (err) => toast.error(err.message || "Failed to start resend"),
+    });
 
     const n = data?.newsletter;
     const c = data?.counts;
@@ -81,6 +103,10 @@ export default function NewsletterAnalyticsPage() {
     const shares = data?.shares;
     const reactions = data?.reactions;
     const feedback = data?.feedback;
+
+    // Delivered-but-never-opened count for the resend button label. Guards
+    // against negative rounding by flooring at 0.
+    const nonOpenerCount = c ? Math.max(0, c.delivered - c.opened) : null;
 
     const platformLabels: Record<string, string> = {
         x: "X / Twitter",
@@ -105,13 +131,28 @@ export default function NewsletterAnalyticsPage() {
                     title="Issue analytics"
                     description="Delivery + engagement for a single newsletter."
                 />
-                <div className="flex items-center gap-2 self-start sm:self-auto">
+                <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
                     <Button variant="secondary" asChild>
                         <Link href="/admin/newsletters">
                             <ArrowLeft className="size-4" />
                             Back
                         </Link>
                     </Button>
+                    {n?.status === "sent" && (
+                        <Button
+                            variant="default"
+                            onClick={() => duplicate.mutate({ id })}
+                            disabled={duplicate.isPending}
+                            title="Duplicate this issue into a fresh draft and resend it only to the subscribers who never opened it"
+                        >
+                            <MailX className="size-4" />
+                            {duplicate.isPending
+                                ? "Preparing…"
+                                : nonOpenerCount !== null
+                                  ? `Resend to non-openers (${nonOpenerCount.toLocaleString()})`
+                                  : "Resend to non-openers"}
+                        </Button>
+                    )}
                     <Button
                         variant="secondary"
                         onClick={() => refetch()}

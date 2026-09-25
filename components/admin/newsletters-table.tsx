@@ -38,6 +38,7 @@ import { SubjectMeter } from "@/components/admin/subject-meter";
 import { buildSubjectVariants } from "@/lib/subject-variants";
 import { renderNewsletterEmailPreview } from "@/lib/emails/newsletter-preview";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { BarChart3, Link2, Check, Copy, UserRound, Users, RotateCcw } from "lucide-react";
 
 type NewsletterStatus = "draft" | "scheduled" | "sent";
@@ -58,9 +59,34 @@ function StatusBadge({ status }: { status: string }) {
 
 export function NewslettersTable() {
     const utils = trpc.useUtils();
+    const router = useRouter();
+    const searchParams = useSearchParams();
 
     const [page, setPage] = useState(0);
     const pageSize = 25;
+
+    // One-click resend-to-non-openers hand-off from a sent issue's analytics
+    // page: it duplicates the issue into a fresh draft, then routes here with
+    // ?draft=<newDraftId>&resend=<originalSentIssueId> so we can auto-open that
+    // draft's Send dialog with the "non-openers of the original" audience
+    // pre-selected. We capture the params once, then strip them from the URL so
+    // a refresh doesn't re-trigger the dialog.
+    const [resendHandoff, setResendHandoff] = useState<{
+        draftId: string;
+        sourceId: string;
+    } | null>(null);
+    useEffect(() => {
+        const draftId = searchParams.get("draft");
+        const sourceId = searchParams.get("resend");
+        if (draftId && sourceId) {
+            setResendHandoff({ draftId, sourceId });
+            setPage(0);
+            // Clean the URL (no history entry) so a reload won't re-open it.
+            router.replace("/admin/newsletters");
+        }
+        // Only run on mount / when the query string first arrives.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const list = trpc.adminNewsletter.list.useQuery(
         { limit: pageSize, offset: page * pageSize },
@@ -227,6 +253,13 @@ export function NewslettersTable() {
                                                 onSend={({ tag, cohort, nonOpenersOf }) => send.mutate({ id: n.id, tag, cohort, nonOpenersOf })}
                                                 sending={send.isPending}
                                                 error={send.error?.message}
+                                                autoOpen={resendHandoff?.draftId === n.id}
+                                                initialAudience={
+                                                    resendHandoff?.draftId === n.id
+                                                        ? `${NONOPENER_PREFIX}${resendHandoff.sourceId}`
+                                                        : undefined
+                                                }
+                                                onAutoOpenConsumed={() => setResendHandoff(null)}
                                             />
                                         )}
                                         <DuplicateNewsletterDialog
@@ -867,6 +900,9 @@ function SendNewsletterDialog({
     onSend,
     sending,
     error,
+    autoOpen,
+    initialAudience,
+    onAutoOpenConsumed,
 }: {
     newsletter: { id: string; subject: string; subjectB?: string | null; preheader?: string | null; html: string };
     onSend: (audience: {
@@ -876,6 +912,11 @@ function SendNewsletterDialog({
     }) => void;
     sending: boolean;
     error?: string;
+    // One-click resend hand-off: when true, auto-open the dialog with
+    // `initialAudience` pre-selected (e.g. non-openers of a source issue).
+    autoOpen?: boolean;
+    initialAudience?: string;
+    onAutoOpenConsumed?: () => void;
 }) {
     const [open, setOpen] = useState(false);
     // "__all__" = every confirmed subscriber; a "__cohort__:*" value = an
@@ -888,10 +929,30 @@ function SendNewsletterDialog({
     const nonOpenersOf = isNonOpeners ? audience.slice(NONOPENER_PREFIX.length) : null;
     const tag = isCohort || isNonOpeners || audience === ALL_AUDIENCE ? null : audience;
 
-    // Reset the audience each time the dialog opens so it never carries a stale
-    // tag from a previous issue.
+    // A pending pre-selected audience for a one-click resend hand-off. Set when
+    // the dialog auto-opens; consumed by the reset effect so the open doesn't
+    // clobber it back to "All".
+    const pendingAudienceRef = useRef<string | null>(null);
+
+    // Auto-open (once) when handed off from the analytics resend button, with
+    // the non-openers audience pre-selected.
     useEffect(() => {
-        if (open) setAudience(ALL_AUDIENCE);
+        if (autoOpen) {
+            pendingAudienceRef.current = initialAudience ?? null;
+            setOpen(true);
+            onAutoOpenConsumed?.();
+        }
+        // Fire only on the auto-open signal.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [autoOpen]);
+
+    // Reset the audience each time the dialog opens so it never carries a stale
+    // tag from a previous issue — unless a resend hand-off pre-selected one.
+    useEffect(() => {
+        if (open) {
+            setAudience(pendingAudienceRef.current ?? ALL_AUDIENCE);
+            pendingAudienceRef.current = null;
+        }
     }, [open]);
 
     // All tags currently in use (for the segment dropdown).
