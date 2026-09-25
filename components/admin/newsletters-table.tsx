@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { trpc } from "@/trpc/client";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -227,7 +228,7 @@ export function NewslettersTable() {
                                             />
                                         )}
                                         <DuplicateNewsletterDialog
-                                            newsletter={{ id: n.id, subject: n.subject, publicationId: n.publicationId ?? null }}
+                                            newsletter={{ id: n.id, subject: n.subject, subjectB: n.subjectB ?? null, publicationId: n.publicationId ?? null }}
                                             onDuplicate={(vars) => duplicate.mutate(vars)}
                                             duplicating={duplicate.isPending}
                                         />
@@ -462,12 +463,13 @@ function DuplicateNewsletterDialog({
     onDuplicate,
     duplicating,
 }: {
-    newsletter: { id: string; subject: string; publicationId: string | null };
-    onDuplicate: (vars: { id: string; publicationId?: string | null }) => void;
+    newsletter: { id: string; subject: string; subjectB: string | null; publicationId: string | null };
+    onDuplicate: (vars: { id: string; publicationId?: string | null; abTest?: boolean }) => void;
     duplicating: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const [choice, setChoice] = useState<string>(SAME_AS_SOURCE);
+    const [abTest, setAbTest] = useState(false);
     const pubs = trpc.adminPublications.list.useQuery(undefined, { enabled: open });
 
     const handleDuplicate = () => {
@@ -477,9 +479,10 @@ function DuplicateNewsletterDialog({
         if (choice === SAME_AS_SOURCE) publicationId = undefined;
         else if (choice === PRIMARY_STREAM) publicationId = null;
         else publicationId = choice;
-        onDuplicate({ id: newsletter.id, publicationId });
+        onDuplicate({ id: newsletter.id, publicationId, abTest: abTest || undefined });
         setOpen(false);
         setChoice(SAME_AS_SOURCE);
+        setAbTest(false);
     };
 
     return (
@@ -519,6 +522,17 @@ function DuplicateNewsletterDialog({
                                     ))}
                             </SelectContent>
                         </Select>
+                    </div>
+                    <div className="flex items-start justify-between gap-4 rounded-none border border-border p-3">
+                        <div className="space-y-0.5">
+                            <label htmlFor="dup-abtest" className="text-sm font-medium text-foreground">
+                                Set up as an A/B subject test
+                            </label>
+                            <p className="text-xs text-muted-foreground">
+                                Keeps Subject A, leaves Subject B blank for you to write a fresh variant.
+                            </p>
+                        </div>
+                        <Switch id="dup-abtest" checked={abTest} onCheckedChange={setAbTest} />
                     </div>
                 </div>
                 <DialogFooter>

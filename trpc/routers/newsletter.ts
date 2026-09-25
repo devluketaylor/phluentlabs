@@ -327,6 +327,10 @@ export const adminNewsletterRouter = router({
             z.object({
                 id: z.string().min(1),
                 publicationId: z.string().nullish(),
+                // When true, set the clone up for an A/B subject test: keep
+                // Subject A, but leave Subject B blank (never inherit the
+                // source's Subject B) so the editor fills in a fresh variant.
+                abTest: z.boolean().optional(),
             }),
         )
         .mutation(async ({ input, ctx }) => {
@@ -368,7 +372,7 @@ export const adminNewsletterRouter = router({
                 id,
                 slug,
                 subject: newSubject,
-                subjectB: source.subjectB ?? null,
+                subjectB: input.abTest ? null : (source.subjectB ?? null),
                 html: source.html,
                 preheader: source.preheader ?? null,
                 publicationId: targetPublicationId,
@@ -384,6 +388,7 @@ export const adminNewsletterRouter = router({
                     subject: newSubject,
                     slug,
                     publicationId: targetPublicationId,
+                    abTest: input.abTest ?? false,
                 },
             });
             return { ok: true, id, slug };
