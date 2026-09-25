@@ -22,7 +22,14 @@ export type ArchiveIssue = {
     preheader: string | null;
     dateMs: number;
     readingMinutes: number;
+    wordCount: number;
 };
+
+// Compact word-count label (e.g. 1,240 words / 980 words) so readers can gauge
+// depth at a glance alongside the reading-time estimate.
+function formatWordCount(n: number) {
+    return `${n.toLocaleString()} word${n === 1 ? "" : "s"}`;
+}
 
 function formatDate(ms: number) {
     return new Date(ms).toLocaleDateString(undefined, {
@@ -212,6 +219,10 @@ export function IssuesArchive({
                                         )}
                                         <span className="text-xs text-muted-foreground">
                                             {issue.readingMinutes} min read
+                                            <span aria-hidden="true" className="px-1.5">
+                                                ·
+                                            </span>
+                                            {formatWordCount(issue.wordCount)}
                                         </span>
                                     </div>
                                     <time

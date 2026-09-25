@@ -162,8 +162,8 @@ async function getIssues(q: string, page: number, publicationSlug: string) {
         ]);
 
         const issues: ArchiveIssue[] = rows.map((r) => {
-            // Reading time: strip HTML, count words, ~220 wpm. Computed here so the
-            // browser never receives the full issue HTML for the index.
+            // Reading time + word count: strip HTML, count words, ~220 wpm. Computed
+            // here so the browser never receives the full issue HTML for the index.
             const words = r.html.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
             const readingMinutes = Math.max(1, Math.round(words / 220));
             const dateMs = (r.sentAt ?? r.createdAt)?.getTime() ?? Date.now();
@@ -174,6 +174,7 @@ async function getIssues(q: string, page: number, publicationSlug: string) {
                 preheader: r.preheader,
                 dateMs,
                 readingMinutes,
+                wordCount: words,
             };
         });
 
