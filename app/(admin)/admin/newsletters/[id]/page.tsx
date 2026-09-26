@@ -114,6 +114,7 @@ export default function NewsletterAnalyticsPage() {
     const ab = data?.abTest;
     const web = data?.web;
     const shares = data?.shares;
+    const links = data?.links;
     const reactions = data?.reactions;
     const feedback = data?.feedback;
 
@@ -365,6 +366,72 @@ export default function NewsletterAnalyticsPage() {
                             ) : (
                                 <p className="text-sm text-muted-foreground">
                                     No shares recorded yet.
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Top links clicked — per-URL click map for this issue, ranked by
+                click volume (from the link_click table the Resend webhook
+                populates). Shows WHICH links readers actually clicked, which the
+                single last-clicked-url per recipient can't tell us. */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <ExternalLink className="size-4 text-primary" />
+                        Top links clicked
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {isLoading || !links ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-8 w-24" />
+                            <Skeleton className="h-4 w-full" />
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-2">
+                                <ExternalLink className="size-6 text-primary" />
+                                <span className="text-2xl font-semibold">
+                                    {links.total.toLocaleString()}
+                                </span>
+                                <span className="text-sm text-muted-foreground">
+                                    total link {links.total === 1 ? "click" : "clicks"} tracked
+                                </span>
+                            </div>
+                            {links.top.length > 0 ? (
+                                <div>
+                                    <p className="text-xs text-muted-foreground mb-2">
+                                        Ranked by clicks
+                                    </p>
+                                    <ul className="divide-y text-sm">
+                                        {links.top.map((l) => (
+                                            <li
+                                                key={l.url}
+                                                className="flex items-center justify-between gap-3 py-2"
+                                            >
+                                                <a
+                                                    href={l.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="min-w-0 flex-1 truncate text-primary hover:underline"
+                                                    title={l.url}
+                                                >
+                                                    {l.url}
+                                                </a>
+                                                <span className="shrink-0 font-medium tabular-nums">
+                                                    {l.clicks.toLocaleString()}
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">
+                                    No link clicks tracked yet. Clicks appear here as
+                                    Resend reports them for this issue.
                                 </p>
                             )}
                         </div>

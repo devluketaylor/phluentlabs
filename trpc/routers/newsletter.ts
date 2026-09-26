@@ -14,6 +14,7 @@ import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
 import { pageViews } from "@/db/schemas/page-views";
 import { shareClicks } from "@/db/schemas/share-clicks";
+import { linkClicks } from "@/db/schemas/link-clicks";
 import { issueReactions } from "@/db/schemas/issue-reactions";
 import { feedback } from "@/db/schemas/feedback";
 import { publications } from "@/db/schemas/publications";
@@ -640,6 +641,26 @@ export const adminNewsletterRouter = router({
                 shares: Number(s.c),
             }));
 
+            // Per-URL click map for this issue: rank the links inside the email
+            // by how many click events each destination received (from the
+            // append-only link_click table the webhook populates). This is the
+            // "which links did readers actually click" breakdown that the single
+            // lastClickedUrl on a recipient row can't provide. Top 15 by volume.
+            const [[{ linkTotal }], topLinkRows] = await Promise.all([
+                ctx.db.select({ linkTotal: count() }).from(linkClicks).where(eq(linkClicks.newsletterId, nid)),
+                ctx.db
+                    .select({ url: linkClicks.url, c: count() })
+                    .from(linkClicks)
+                    .where(eq(linkClicks.newsletterId, nid))
+                    .groupBy(linkClicks.url)
+                    .orderBy(desc(count()))
+                    .limit(15),
+            ]);
+            const topLinks = topLinkRows.map((l) => ({
+                url: l.url,
+                clicks: Number(l.c),
+            }));
+
             // Anonymous reader reactions ("was this useful?") on this issue's
             // public archive page. Coarse up / so-so / down tally.
             const reactionRows = await ctx.db
@@ -742,6 +763,7 @@ export const adminNewsletterRouter = router({
                 counts: { recipients: total, delivered, opened, clicked, bounced, complained },
                 web: { views: Number(webViews), referrers },
                 shares: { total: Number(shareTotal), channels: shareChannels },
+                links: { total: Number(linkTotal), top: topLinks },
                 reactions: {
                     up: reactionTally.up,
                     mid: reactionTally.mid,

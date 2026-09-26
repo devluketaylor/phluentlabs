@@ -3,7 +3,9 @@ import { Webhook } from "svix";
 import { db } from "@/db/client";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { subscribers } from "@/db/schemas/subscribers";
+import { linkClicks } from "@/db/schemas/link-clicks";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { randomUUID } from "crypto";
 
 // Public, UNAUTHENTICATED endpoint that Resend calls with delivery/engagement
 // events. It is signature-gated: Resend signs each webhook with Svix, and we
@@ -29,7 +31,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 // state (subscribed/pending) so we never clobber an explicit unsubscribe or a
 // prior suppression.  Soft/transient bounces do NOT suppress.
 //   email.opened             -> first-open timestamp + increment openCount
-//   email.clicked            -> increment clickCount + record last URL
+//   email.clicked            -> increment clickCount + record last URL, and
+//                               append a link_click row (per-issue click map)
 //
 // Idempotency: every event carries a Svix message id (svix-id header) and
 // Resend includes its own event created_at. We store the last processed event
@@ -193,6 +196,21 @@ export async function POST(request: Request) {
                     lastEventId: svixId || recipient.lastEventId,
                 })
                 .where(eq(newsletterRecipients.id, recipient.id));
+            // Also record the clicked URL in the append-only link_click table so
+            // we can build a per-issue "top links" click map (the recipient row
+            // only remembers the SINGLE most-recent url). No PII stored here —
+            // just the issue id + the destination url. This runs only after the
+            // idempotency guard above, so a webhook redelivery of the same Svix
+            // id never inserts a duplicate click row.
+            if (url) {
+                // Truncate defensively so a pathological url can't bloat the row.
+                const normalized = url.slice(0, 2048);
+                await db.insert(linkClicks).values({
+                    id: randomUUID(),
+                    newsletterId: recipient.newsletterId,
+                    url: normalized,
+                });
+            }
             break;
         }
         case "email.bounced": {

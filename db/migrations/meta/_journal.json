@@ -176,6 +176,13 @@
       "when": 1790280225799,
       "tag": "0024_little_pestilence",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790453082325,
+      "tag": "0025_lively_hiroim",
+      "breakpoints": true
     }
   ]
 }
