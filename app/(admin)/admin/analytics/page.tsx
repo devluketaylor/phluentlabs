@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/trpc/client";
-import { LineChart as LineChartIcon, TrendingUp, Trophy, FlaskConical, Clock, Download, ShieldCheck } from "lucide-react";
+import { LineChart as LineChartIcon, TrendingUp, Trophy, FlaskConical, Clock, Download, ShieldCheck, Link2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -92,6 +92,29 @@ export default function AnalyticsPage() {
     } = trpc.adminDashboard.deliverabilityScores.useQuery(undefined, {
         refetchOnWindowFocus: false,
     });
+
+    const {
+        data: topLinks,
+        isLoading: topLinksLoading,
+    } = trpc.adminDashboard.topLinks.useQuery(undefined, {
+        refetchOnWindowFocus: false,
+    });
+
+    // Strip a url down to a readable label (host + path, no scheme) for the
+    // click-map list; keeps the full url in a title tooltip + on the link.
+    const prettyUrl = (url: string) => {
+        try {
+            const u = new URL(url);
+            const path = u.pathname === "/" ? "" : u.pathname;
+            return `${u.host}${path}${u.search}`;
+        } catch {
+            return url;
+        }
+    };
+    const topLinkMax =
+        topLinks && topLinks.top.length
+            ? Math.max(1, ...topLinks.top.map((l) => l.clicks))
+            : 1;
 
     // Max open-count in the 7x24 matrix, for heatmap cell shading.
     const heatMax =
@@ -587,6 +610,83 @@ export default function AnalyticsPage() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Most-clicked links across ALL issues (click map rollup) */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <Link2 className="size-4 text-primary" />
+                        Most-clicked links across all issues
+                        <span className="text-xs font-normal text-muted-foreground">
+                            (which destinations earn clicks over time)
+                        </span>
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {topLinksLoading || !topLinks ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-6 w-full" />
+                            <Skeleton className="h-6 w-full" />
+                            <Skeleton className="h-6 w-full" />
+                        </div>
+                    ) : !topLinks.hasData ? (
+                        <p className="text-sm text-muted-foreground">
+                            No link clicks tracked yet. Once subscribers click links
+                            in your sent issues, the destinations that consistently
+                            earn clicks across your whole back-catalogue show up here
+                            — a content-strategy signal (which CTAs and reads land).
+                        </p>
+                    ) : (
+                        <div className="space-y-3">
+                            <p className="text-xs text-muted-foreground">
+                                {topLinks.total.toLocaleString()} click
+                                {topLinks.total === 1 ? "" : "s"} tracked across all
+                                issues · top {topLinks.top.length} destination
+                                {topLinks.top.length === 1 ? "" : "s"}
+                            </p>
+                            <ol className="space-y-2.5">
+                                {topLinks.top.map((l, i) => (
+                                    <li key={l.url} className="space-y-1">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-sm font-semibold text-muted-foreground w-5 shrink-0 tabular-nums">
+                                                {i + 1}
+                                            </span>
+                                            <a
+                                                href={l.url}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="min-w-0 flex-1 truncate text-sm font-medium hover:underline"
+                                                title={l.url}
+                                            >
+                                                {prettyUrl(l.url)}
+                                            </a>
+                                            <span className="text-sm font-semibold whitespace-nowrap tabular-nums">
+                                                {l.clicks.toLocaleString()}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="w-5 shrink-0" />
+                                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                                                <div
+                                                    className="h-full bg-primary"
+                                                    style={{
+                                                        width: `${Math.round(
+                                                            (l.clicks / topLinkMax) * 100,
+                                                        )}%`,
+                                                    }}
+                                                />
+                                            </div>
+                                            <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
+                                                {l.issues} issue{l.issues === 1 ? "" : "s"}
+                                            </span>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ol>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
         </div>
     );
 }

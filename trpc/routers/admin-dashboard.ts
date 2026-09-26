@@ -6,6 +6,7 @@ import { REMINDER_AFTER_DAYS, REMINDER_MAX_AGE_DAYS } from "@/lib/pending-remind
 import { newsletters } from "@/db/schemas/newsletters";
 import { newsletterRecipients } from "@/db/schemas/newsletter-recipients";
 import { pageViews } from "@/db/schemas/page-views";
+import { linkClicks } from "@/db/schemas/link-clicks";
 
 export const adminDashboardRouter = router({
     // One query powering the admin dashboard: headline counts, status
@@ -1315,6 +1316,47 @@ export const adminDashboardRouter = router({
             avgScore,
             poorCount,
             issues,
+        };
+    }),
+
+    // "Most-clicked links across ALL issues." The per-issue click map
+    // (newsletter.analytics.links) answers "which links did readers click in
+    // THIS issue"; this rolls the same append-only link_click data up a level
+    // so the operator sees which destinations consistently earn clicks across
+    // the whole back-catalogue (product/CTA links vs external reads) — a
+    // content-strategy signal. Read-only aggregation over link_click; NO PII
+    // (that table stores only issue id + destination url). No schema change.
+    topLinks: adminProcedure.query(async ({ ctx }) => {
+        // Total click events tracked across every issue.
+        const [{ total }] = await ctx.db
+            .select({ total: count() })
+            .from(linkClicks);
+
+        // Rank destinations by click volume across all issues, and count how
+        // many distinct issues each destination was clicked in (a url clicked
+        // across many issues is a durable, evergreen link; a one-issue spike is
+        // more of a moment). Top 20.
+        const rows = await ctx.db
+            .select({
+                url: linkClicks.url,
+                clicks: count(),
+                issues: sql<number>`count(distinct ${linkClicks.newsletterId})`,
+            })
+            .from(linkClicks)
+            .groupBy(linkClicks.url)
+            .orderBy(desc(count()))
+            .limit(20);
+
+        const top = rows.map((r) => ({
+            url: r.url,
+            clicks: Number(r.clicks),
+            issues: Number(r.issues),
+        }));
+
+        return {
+            hasData: top.length > 0,
+            total: Number(total),
+            top,
         };
     }),
 });
