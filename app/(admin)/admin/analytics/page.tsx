@@ -5,11 +5,31 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/trpc/client";
-import { LineChart as LineChartIcon, TrendingUp, Trophy, FlaskConical, Clock, Download } from "lucide-react";
+import { LineChart as LineChartIcon, TrendingUp, Trophy, FlaskConical, Clock, Download, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import { LineChart, BarChart, DualLineChart } from "@/components/admin/charts";
+
+// Grade → theme-token styling (monochrome; only warning/poor pull the
+// destructive accent). No retired coral.
+const GRADE_LABEL: Record<string, string> = {
+    excellent: "Excellent",
+    good: "Good",
+    fair: "Fair",
+    poor: "Poor",
+};
+
+function gradeBadgeClass(grade: string) {
+    switch (grade) {
+        case "poor":
+            return "bg-destructive/15 text-destructive";
+        case "fair":
+            return "bg-muted text-foreground";
+        default:
+            return "bg-primary/15 text-foreground";
+    }
+}
 
 function formatDate(d: Date | string | null | undefined) {
     if (!d) return "—";
@@ -63,6 +83,13 @@ export default function AnalyticsPage() {
         data: sendTime,
         isLoading: sendTimeLoading,
     } = trpc.adminDashboard.sendTimeInsights.useQuery(undefined, {
+        refetchOnWindowFocus: false,
+    });
+
+    const {
+        data: deliverability,
+        isLoading: deliverabilityLoading,
+    } = trpc.adminDashboard.deliverabilityScores.useQuery(undefined, {
         refetchOnWindowFocus: false,
     });
 
@@ -324,6 +351,103 @@ export default function AnalyticsPage() {
                                     timezone, matching the schedule picker.
                                 </p>
                             </div>
+                        </>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Per-issue deliverability score rollup */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                        <ShieldCheck className="size-4 text-primary" />
+                        Deliverability score per issue
+                        <span className="text-xs font-normal text-muted-foreground">
+                            (bounces, complaints &amp; engagement)
+                        </span>
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {deliverabilityLoading || !deliverability ? (
+                        <div className="space-y-2">
+                            <Skeleton className="h-6 w-full" />
+                            <Skeleton className="h-6 w-full" />
+                            <Skeleton className="h-6 w-full" />
+                        </div>
+                    ) : !deliverability.hasData ? (
+                        <p className="text-sm text-muted-foreground">
+                            No sends with reported delivery data yet. Once issues go
+                            out and Resend reports bounces/complaints/opens, a
+                            per-issue deliverability score appears here so you can
+                            spot a pattern of issues hurting your sender reputation.
+                        </p>
+                    ) : (
+                        <>
+                            {/* Portfolio summary */}
+                            <div className="flex flex-wrap items-center gap-4 rounded-md border border-border p-4">
+                                <div>
+                                    <p className="eyebrow text-muted-foreground">
+                                        Avg score
+                                    </p>
+                                    <p className="text-2xl font-semibold tabular-nums">
+                                        {deliverability.avgScore ?? "—"}
+                                        <span className="text-sm font-normal text-muted-foreground">
+                                            {" "}/ 100
+                                        </span>
+                                    </p>
+                                </div>
+                                {deliverability.poorCount > 0 && (
+                                    <p className="text-sm text-destructive">
+                                        {deliverability.poorCount} issue
+                                        {deliverability.poorCount === 1 ? "" : "s"}{" "}
+                                        scored poor — review bounce/complaint rates.
+                                    </p>
+                                )}
+                                <p className="ml-auto max-w-xs text-xs text-muted-foreground">
+                                    Higher is healthier. Complaints and bounces cost
+                                    the most; very low opens nudge it down.
+                                </p>
+                            </div>
+
+                            <ul className="divide-y">
+                                {deliverability.issues.map((iss) => (
+                                    <li
+                                        key={iss.id}
+                                        className="flex items-center gap-3 py-2.5"
+                                    >
+                                        <span
+                                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-sm font-semibold tabular-nums ${gradeBadgeClass(iss.grade)}`}
+                                            title={GRADE_LABEL[iss.grade]}
+                                        >
+                                            {iss.score}
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                            <Link
+                                                href={`/admin/newsletters/${iss.id}`}
+                                                className="block truncate text-sm font-medium hover:underline"
+                                            >
+                                                {iss.subject}
+                                            </Link>
+                                            <p className="text-xs text-muted-foreground">
+                                                {iss.sentAtMs
+                                                    ? formatDate(new Date(iss.sentAtMs))
+                                                    : "—"}{" "}
+                                                · {iss.recipients.toLocaleString()} sent
+                                                {iss.reasons.length > 0 && (
+                                                    <span className="text-destructive">
+                                                        {" "}· {iss.reasons.join(", ")}
+                                                    </span>
+                                                )}
+                                            </p>
+                                        </div>
+                                        <span
+                                            className={`hidden shrink-0 rounded-full px-2 py-0.5 text-xs font-medium sm:inline ${gradeBadgeClass(iss.grade)}`}
+                                        >
+                                            {GRADE_LABEL[iss.grade]}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
                         </>
                     )}
                 </CardContent>

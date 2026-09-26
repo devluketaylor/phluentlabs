@@ -1165,4 +1165,156 @@ export const adminDashboardRouter = router({
                 })),
             };
         }),
+
+    // Per-issue DELIVERABILITY SCORE rollup (Tier 18). Read-only aggregation,
+    // no schema. Combines post-send signals into a single 0-100 score per sent
+    // issue so a pattern of deliverability-hurting issues is visible over time.
+    //
+    // Scoring model (higher = healthier delivery), starting from 100:
+    //   - complaint rate: the biggest reputation killer — heavily penalized.
+    //     Mailbox providers act on complaints fast; even 0.1% is a warning.
+    //   - bounce rate: hard signal of list hygiene / spam-trap risk.
+    //   - open rate: a soft engagement proxy — very low opens can indicate
+    //     spam-foldering, but is only lightly weighted (and skipped when there
+    //     aren't enough recipients to be meaningful).
+    // The score is clamped to 0-100 and bucketed into a grade for the UI.
+    deliverabilityScores: adminProcedure.query(async ({ ctx }) => {
+        const sent = await ctx.db
+            .select({
+                id: newsletters.id,
+                subject: newsletters.subject,
+                sentAt: newsletters.sentAt,
+            })
+            .from(newsletters)
+            .where(eq(newsletters.status, "sent"))
+            .orderBy(desc(newsletters.sentAt));
+
+        if (sent.length === 0) {
+            return {
+                hasData: false,
+                avgScore: null as number | null,
+                poorCount: 0,
+                issues: [] as {
+                    id: string;
+                    subject: string;
+                    sentAtMs: number | null;
+                    recipients: number;
+                    openRate: number;
+                    clickRate: number;
+                    bounceRate: number;
+                    complaintRate: number;
+                    score: number;
+                    grade: "excellent" | "good" | "fair" | "poor";
+                    reasons: string[];
+                }[],
+            };
+        }
+
+        const ids = sent.map((n) => n.id);
+        const grouped = await ctx.db
+            .select({
+                newsletterId: newsletterRecipients.newsletterId,
+                recipients: count(),
+                delivered: count(newsletterRecipients.deliveredAt),
+                opened: count(newsletterRecipients.openedAt),
+                clicked: count(newsletterRecipients.clickedAt),
+                bounced: count(newsletterRecipients.bouncedAt),
+                complained: count(newsletterRecipients.complainedAt),
+            })
+            .from(newsletterRecipients)
+            .where(inArray(newsletterRecipients.newsletterId, ids))
+            .groupBy(newsletterRecipients.newsletterId);
+        const byId = new Map(grouped.map((g) => [g.newsletterId, g]));
+
+        const pct = (n: number, d: number) => (d > 0 ? (n / d) * 100 : 0);
+        const round1 = (n: number) => Math.round(n * 10) / 10;
+
+        const issues = sent.map((n) => {
+            const g = byId.get(n.id);
+            const recipients = Number(g?.recipients ?? 0);
+            const delivered = Number(g?.delivered ?? 0);
+            const opened = Number(g?.opened ?? 0);
+            const clicked = Number(g?.clicked ?? 0);
+            const bounced = Number(g?.bounced ?? 0);
+            const complained = Number(g?.complained ?? 0);
+
+            // Rates: bounce/complaint over everyone we attempted; open over the
+            // deliverable base (fall back to recipients if delivered isn't tracked).
+            const openDenom = delivered > 0 ? delivered : recipients;
+            const bounceRate = pct(bounced, recipients);
+            const complaintRate = pct(complained, recipients);
+            const openRate = pct(opened, openDenom);
+            const clickRate = pct(clicked, openDenom);
+
+            // --- Scoring ---
+            let score = 100;
+            const reasons: string[] = [];
+
+            // Complaints: brutal. ~25 pts per 0.1%, so 0.4% ≈ -100.
+            if (complaintRate > 0) {
+                const penalty = Math.min(60, complaintRate * 250);
+                score -= penalty;
+                reasons.push(
+                    `${round1(complaintRate)}% complaints`,
+                );
+            }
+            // Bounces: strong. ~5 pts per 1%, capped.
+            if (bounceRate > 0) {
+                const penalty = Math.min(40, bounceRate * 5);
+                score -= penalty;
+                if (bounceRate >= 2) reasons.push(`${round1(bounceRate)}% bounces`);
+            }
+            // Low engagement: soft, only when there's a meaningful sample and no
+            // opens are being reported would be very low. Under 10% opens on a
+            // 20+ recipient send loses up to 15 pts.
+            if (openDenom >= 20 && openRate < 15) {
+                const penalty = Math.min(15, (15 - openRate) * 1);
+                score -= penalty;
+                if (openRate < 10) reasons.push(`${round1(openRate)}% open rate`);
+            }
+
+            score = Math.max(0, Math.min(100, Math.round(score)));
+
+            // Grade buckets for the UI.
+            const grade: "excellent" | "good" | "fair" | "poor" =
+                score >= 90
+                    ? "excellent"
+                    : score >= 75
+                      ? "good"
+                      : score >= 55
+                        ? "fair"
+                        : "poor";
+
+            return {
+                id: n.id,
+                subject: n.subject,
+                sentAtMs: n.sentAt ? new Date(n.sentAt).getTime() : null,
+                recipients,
+                openRate: round1(openRate),
+                clickRate: round1(clickRate),
+                bounceRate: round1(bounceRate),
+                complaintRate: round1(complaintRate),
+                score,
+                grade,
+                reasons,
+            };
+        });
+
+        // Portfolio average across issues that actually had recipients.
+        const scored = issues.filter((i) => i.recipients > 0);
+        const avgScore =
+            scored.length > 0
+                ? Math.round(
+                      scored.reduce((s, i) => s + i.score, 0) / scored.length,
+                  )
+                : null;
+        const poorCount = scored.filter((i) => i.grade === "poor").length;
+
+        return {
+            hasData: scored.length > 0,
+            avgScore,
+            poorCount,
+            issues,
+        };
+    }),
 });
