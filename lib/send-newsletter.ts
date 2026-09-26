@@ -54,7 +54,13 @@ function isTransient(err: unknown): boolean {
  * same retry path.
  */
 async function sendBatchWithRetry(
-    emails: Array<{ from: string; to: string; subject: string; html: string }>,
+    emails: Array<{
+        from: string;
+        to: string;
+        subject: string;
+        html: string;
+        headers?: Record<string, string>;
+    }>,
 ): Promise<Array<{ id: string } | undefined>> {
     let lastErr: unknown;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -317,6 +323,13 @@ export async function sendNewsletterToSubscribers(
                 const unsubUrl = new URL("/unsubscribe", appUrl);
                 unsubUrl.searchParams.set("token", unsubToken);
 
+                // RFC 8058 one-click unsubscribe target (POST). Mail clients
+                // (Gmail/Yahoo) POST here directly when the reader taps the
+                // native "Unsubscribe" affordance, with NO extra click. Same
+                // signed token as the visible page.
+                const oneClickUnsubUrl = new URL("/api/unsubscribe", appUrl);
+                oneClickUnsubUrl.searchParams.set("token", unsubToken);
+
                 // Feedback link → the public /feedback form, attributed to this
                 // issue's slug. Pair it with an explicit "just reply" prompt so
                 // a plain reply-to-this-email ALSO reads as invited (even though
@@ -331,17 +344,31 @@ export async function sendNewsletterToSubscribers(
                     Got a thought on this issue? Just hit reply — a real person reads every response — or
                     <a href="${feedbackUrl.toString()}" style="color:#111;text-decoration:underline;">send a note here</a>.
                 </p>
-                <p style="margin-top:12px;font-size:12px;color:#888;">
-                    <a href="${unsubUrl.toString()}" style="color:#888;">Unsubscribe</a>
+                <p style="margin-top:12px;font-size:12px;line-height:1.6;color:#888;">
+                    You’re getting this because you subscribed to phluent at <span style="color:#666;">${sub.email}</span>.
+                    <br />
+                    <a href="${unsubUrl.toString()}" style="color:#666;text-decoration:underline;">Unsubscribe instantly</a>
                     &nbsp;·&nbsp;
                     <a href="${aboutUrl.toString()}" style="color:#888;">Why am I getting this?</a>
                 </p>`;
+
+                // List-Unsubscribe (RFC 2369) + List-Unsubscribe-Post (RFC
+                // 8058). Required by Gmail/Yahoo for bulk senders and a strong
+                // deliverability/trust signal. Offer BOTH a one-click HTTPS
+                // POST target and a mailto: fallback so every client can honor
+                // it. The `List-Unsubscribe-Post` header opts the HTTPS URL
+                // into the true one-click (no-confirmation) flow.
+                const headers: Record<string, string> = {
+                    "List-Unsubscribe": `<${oneClickUnsubUrl.toString()}>, <mailto:${fromEmail}?subject=unsubscribe>`,
+                    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                };
 
                 return {
                     from: fromEmail,
                     to: sub.email,
                     subject,
                     html,
+                    headers,
                 };
             }),
         );
