@@ -1,9 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Circle, FileText, Info } from "lucide-react";
+import {
+    AlertTriangle,
+    CheckCircle2,
+    Circle,
+    ExternalLink,
+    FileText,
+    Info,
+    Link2,
+    Loader2,
+    XCircle,
+} from "lucide-react";
 import { lintIssue } from "@/lib/issue-lint";
 import { analyzePlainText } from "@/lib/html-to-text";
+import { trpc } from "@/trpc/client";
+import type { LinkCheckResult } from "@/lib/link-check";
 
 /**
  * Read-only pre-send "quality" panel shown in the edit dialog. Analyzes the
@@ -29,6 +41,34 @@ export function IssueLintPanel({
     );
     const plain = useMemo(() => analyzePlainText(html), [html]);
     const [showPlainText, setShowPlainText] = useState(false);
+
+    // On-demand dead-link check (pings external destinations server-side).
+    const [linkReport, setLinkReport] = useState<{
+        total: number;
+        checked: number;
+        capped: boolean;
+        results: LinkCheckResult[];
+    } | null>(null);
+    const [linkError, setLinkError] = useState<string | null>(null);
+    const checkLinks = trpc.adminNewsletter.checkLinks.useMutation({
+        onMutate: () => {
+            setLinkError(null);
+        },
+        onSuccess: (data) => {
+            setLinkReport({
+                total: data.total,
+                checked: data.checked,
+                capped: data.capped,
+                results: data.results,
+            });
+        },
+        onError: (err) => {
+            setLinkError(err.message || "Link check failed.");
+        },
+    });
+    const broken = (linkReport?.results ?? []).filter((r) => r.status === "broken");
+    const warnLinks = (linkReport?.results ?? []).filter((r) => r.status === "warn");
+    const okLinks = (linkReport?.results ?? []).filter((r) => r.status === "ok");
 
     // Combine the HTML-quality issues with the plain-text quality issues so the
     // "looks good" state + counts reflect both.
@@ -96,6 +136,87 @@ export function IssueLintPanel({
                             {plain.text || "(empty — nothing to show)"}
                         </pre>
                     </div>
+                )}
+            </div>
+
+            {/* On-demand dead-link check */}
+            <div className="space-y-2 border-t border-border pt-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <button
+                        type="button"
+                        onClick={() => checkLinks.mutate({ html })}
+                        disabled={checkLinks.isPending || result.linkCount === 0}
+                        className="flex items-center gap-1.5 border border-border px-2.5 py-1 text-xs text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        {checkLinks.isPending ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                            <Link2 className="size-3.5" />
+                        )}
+                        {checkLinks.isPending ? "Checking links…" : "Check links"}
+                    </button>
+                    {result.linkCount === 0 ? (
+                        <span className="text-[11px] text-muted-foreground">No external links to check.</span>
+                    ) : linkReport ? (
+                        <span className="text-[11px] text-muted-foreground">
+                            {broken.length > 0 ? (
+                                <span className="text-destructive">
+                                    {broken.length} broken
+                                </span>
+                            ) : (
+                                <span className="text-green-600 dark:text-green-400">All reachable</span>
+                            )}
+                            {" · "}
+                            {linkReport.checked} checked
+                            {linkReport.capped ? ` of ${linkReport.total}` : ""}
+                        </span>
+                    ) : null}
+                </div>
+
+                {linkError && (
+                    <p className="flex items-start gap-2 text-xs text-destructive">
+                        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                        {linkError}
+                    </p>
+                )}
+
+                {linkReport && linkReport.capped && (
+                    <p className="text-[11px] text-muted-foreground">
+                        Only the first {linkReport.checked} links were checked (cap).
+                    </p>
+                )}
+
+                {linkReport && (broken.length > 0 || warnLinks.length > 0) && (
+                    <ul className="space-y-1.5">
+                        {[...broken, ...warnLinks].map((r, i) => (
+                            <li key={`${r.url}-${i}`} className="flex items-start gap-2 text-xs">
+                                {r.status === "broken" ? (
+                                    <XCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+                                ) : (
+                                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                                )}
+                                <span className="min-w-0">
+                                    <a
+                                        href={r.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex max-w-full items-center gap-1 break-all text-foreground underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                                    >
+                                        <span className="truncate">{r.url}</span>
+                                        <ExternalLink className="size-3 shrink-0" />
+                                    </a>
+                                    <span className="text-muted-foreground"> — {r.detail}</span>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+
+                {linkReport && broken.length === 0 && warnLinks.length === 0 && okLinks.length > 0 && (
+                    <p className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                        <CheckCircle2 className="size-3.5" /> All {okLinks.length} link
+                        {okLinks.length === 1 ? "" : "s"} reachable.
+                    </p>
                 )}
             </div>
 

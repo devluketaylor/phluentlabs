@@ -27,6 +27,12 @@ import { resolveCohortSubscribers } from "@/lib/engagement-cohort";
 import { resolveNonOpenerSubscribers, assertSentSource } from "@/lib/non-openers";
 import { activeSubscriberWhere, autoResumeElapsedSnoozes } from "@/lib/snooze";
 import { recordAudit } from "@/lib/audit";
+import {
+    checkLinks as pingCheckLinks,
+    extractCheckableLinks,
+    MAX_LINKS_TO_CHECK,
+    type LinkCheckResult,
+} from "@/lib/link-check";
 import { user } from "@/db/schemas/auth";
 import { auditLog } from "@/db/schemas/audit-log";
 import { normalizeRole } from "@/lib/roles";
@@ -41,6 +47,42 @@ function buildTestEmailHtml(issueHtml: string): string {
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const newsletterStatus = z.enum(["draft", "scheduled", "sent"]);
+
+// ── Link-check: per-actor rate limit + per-issue in-memory result cache ────
+// Pinging external URLs is comparatively expensive, so we (a) rate-limit how
+// often a single actor can trigger a full check, and (b) cache results per
+// issue-content hash for a short window so re-opening the panel or a repeat
+// click reuses the last result instead of re-pinging. Best-effort, single
+// instance — no persistence needed for a soft editor aid.
+const LINK_CHECK_WINDOW_MS = 60_000;
+const LINK_CHECK_MAX_PER_WINDOW = 8;
+const LINK_CHECK_CACHE_TTL_MS = 5 * 60_000;
+const linkCheckHits = new Map<string, { count: number; resetAt: number }>();
+const linkCheckCache = new Map<
+    string,
+    { at: number; results: LinkCheckResult[]; total: number; checked: number }
+>();
+
+function linkCheckRateLimited(actorKey: string): boolean {
+    const now = Date.now();
+    const entry = linkCheckHits.get(actorKey);
+    if (!entry || entry.resetAt <= now) {
+        linkCheckHits.set(actorKey, { count: 1, resetAt: now + LINK_CHECK_WINDOW_MS });
+        return false;
+    }
+    entry.count += 1;
+    return entry.count > LINK_CHECK_MAX_PER_WINDOW;
+}
+
+/** Tiny stable hash of the checkable-URL set (cache key). */
+function linkSetKey(urls: string[]): string {
+    let h = 0;
+    const joined = urls.join("\n");
+    for (let i = 0; i < joined.length; i++) {
+        h = (h * 31 + joined.charCodeAt(i)) | 0;
+    }
+    return `${urls.length}:${h}`;
+}
 
 export const adminNewsletterRouter = router({
     // Lightweight identity echo so the editor UI can prefill "send a test to
@@ -422,6 +464,65 @@ export const adminNewsletterRouter = router({
             const token = await signPreviewToken({ newsletterId: newsletter.id });
             const base = process.env.NEXT_PUBLIC_APP_URL ?? "https://phluentlabs.com";
             return { url: `${base}/preview/${token}` };
+        }),
+
+    // On-demand dead-link check: extracts external http(s) hrefs from the
+    // current issue HTML and actually pings each one server-side (HEAD→GET
+    // fallback, hard timeout) so the editor sees 4xx/5xx/timeouts before send.
+    // The structural client lint already catches empty/"#"/javascript: links;
+    // this catches links that LOOK fine but are actually broken. Rate-limited
+    // per actor + cached per issue-content set for a short window.
+    checkLinks: editorProcedure
+        .input(z.object({ html: z.string() }))
+        .mutation(async ({ input, ctx }) => {
+            const urls = extractCheckableLinks(input.html);
+            const total = urls.length;
+
+            if (total === 0) {
+                return { total: 0, checked: 0, capped: false, results: [] as LinkCheckResult[] };
+            }
+
+            const toCheck = urls.slice(0, MAX_LINKS_TO_CHECK);
+            const capped = total > MAX_LINKS_TO_CHECK;
+            const cacheKey = linkSetKey(toCheck);
+
+            // Serve a fresh-enough cached result without re-pinging (and without
+            // burning a rate-limit token).
+            const cached = linkCheckCache.get(cacheKey);
+            if (cached && Date.now() - cached.at < LINK_CHECK_CACHE_TTL_MS) {
+                return {
+                    total: cached.total,
+                    checked: cached.checked,
+                    capped,
+                    cached: true,
+                    results: cached.results,
+                };
+            }
+
+            const actorKey = ctx.adminUserId ?? ctx.adminEmail ?? "anon";
+            if (linkCheckRateLimited(actorKey)) {
+                throw new TRPCError({
+                    code: "TOO_MANY_REQUESTS",
+                    message: "Too many link checks — wait a minute and try again.",
+                });
+            }
+
+            const results = await pingCheckLinks(toCheck);
+            linkCheckCache.set(cacheKey, {
+                at: Date.now(),
+                results,
+                total,
+                checked: toCheck.length,
+            });
+            // Prune the cache opportunistically so it can't grow unbounded.
+            if (linkCheckCache.size > 200) {
+                const cutoff = Date.now() - LINK_CHECK_CACHE_TTL_MS;
+                for (const [k, v] of linkCheckCache) {
+                    if (v.at < cutoff) linkCheckCache.delete(k);
+                }
+            }
+
+            return { total, checked: toCheck.length, capped, cached: false, results };
         }),
 
     send: editorProcedure
