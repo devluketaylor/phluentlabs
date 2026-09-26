@@ -16,11 +16,16 @@ import { lintIssue } from "@/lib/issue-lint";
 export function IssueLintPanel({
     html,
     preheader,
+    subject,
 }: {
     html: string;
     preheader?: string | null;
+    subject?: string | null;
 }) {
-    const result = useMemo(() => lintIssue({ html, preheader }), [html, preheader]);
+    const result = useMemo(
+        () => lintIssue({ html, preheader, subject }),
+        [html, preheader, subject],
+    );
 
     const warnings = result.issues.filter((i) => i.severity === "warn");
     const infos = result.issues.filter((i) => i.severity === "info");
@@ -50,6 +55,13 @@ export function IssueLintPanel({
                 <Metric label="Links" value={String(result.linkCount)} />
                 <Metric label="Images" value={String(result.imageCount)} />
             </div>
+
+            {result.spamSignalCount > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                    {result.spamSignalCount} deliverability signal
+                    {result.spamSignalCount === 1 ? "" : "s"} to review below.
+                </p>
+            )}
 
             {/* Checklist */}
             {result.issues.length > 0 && (

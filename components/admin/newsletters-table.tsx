@@ -1484,7 +1484,7 @@ function EditNewsletterDialog({
                         />
                     </div>
 
-                    <IssueLintPanel html={html} preheader={preheader} />
+                    <IssueLintPanel html={html} preheader={preheader} subject={subject} />
 
                     <div className="flex justify-end gap-2 pt-2">
                         <Button variant="secondary" onClick={attemptClose}>

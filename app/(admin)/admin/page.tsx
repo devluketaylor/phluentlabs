@@ -104,7 +104,7 @@ const AdminPage = () => {
                     onChange={setHtml}
                     placeholder="Write the email body"
                 />
-                <IssueLintPanel html={html} preheader={null} />
+                <IssueLintPanel html={html} preheader={null} subject={subject} />
                 <Button onClick={onSave} disabled={create.isPending || !subject.trim()}>
                     {create.isPending ? "Saving..." : "Save draft"}
                 </Button>

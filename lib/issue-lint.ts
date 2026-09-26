@@ -27,10 +27,65 @@ export type IssueLintResult = {
     imagesMissingAlt: number;
     emptyLinkCount: number;
     hasPreheader: boolean;
+    /** Number of distinct spam-trigger signals detected (subject + body). */
+    spamSignalCount: number;
     issues: LintIssue[];
 };
 
 const WORDS_PER_MINUTE = 220;
+
+/**
+ * Common spam-filter trigger phrases (case-insensitive, word-boundary). Kept
+ * intentionally conservative + developer-newsletter-appropriate so we don't
+ * cry wolf on legitimate copy. These are the phrases spam classifiers (and
+ * Gmail's promotions heuristics) weight most heavily.
+ */
+const SPAM_TRIGGER_PHRASES: readonly string[] = [
+    "act now",
+    "limited time",
+    "click here",
+    "buy now",
+    "order now",
+    "free money",
+    "risk[- ]?free",
+    "100% free",
+    "guaranteed",
+    "no obligation",
+    "cash bonus",
+    "earn \\$",
+    "make money",
+    "double your",
+    "winner",
+    "congratulations you",
+    "you have been selected",
+    "this is not spam",
+    "viagra",
+    "weight loss",
+    "work from home",
+    "miracle",
+    "lowest price",
+    "best price",
+    "urgent",
+    "apply now",
+    "call now",
+];
+
+/** Count emoji-ish codepoints in a string (rough, pictographic ranges). */
+function countEmoji(s: string): number {
+    // Pictographic + symbol ranges commonly used as emoji; deliberately rough.
+    const re =
+        /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}]/gu;
+    const m = s.match(re);
+    return m ? m.length : 0;
+}
+
+/** Fraction of alphabetic characters that are uppercase (0..1). */
+function uppercaseRatio(s: string): number {
+    const letters = s.replace(/[^a-zA-Z]/g, "");
+    if (letters.length === 0) return 0;
+    const upper = letters.replace(/[^A-Z]/g, "").length;
+    return upper / letters.length;
+}
 
 /** Strip tags and collapse whitespace to get readable text. */
 function toText(html: string): string {
@@ -73,9 +128,14 @@ function extractImages(html: string): Array<{ hasAlt: boolean }> {
  * Analyze an issue for pre-send quality signals. Pure — safe to call on every
  * keystroke (it's cheap, but callers may debounce/memoize anyway).
  */
-export function lintIssue(input: { html: string; preheader?: string | null }): IssueLintResult {
+export function lintIssue(input: {
+    html: string;
+    preheader?: string | null;
+    subject?: string | null;
+}): IssueLintResult {
     const html = input.html ?? "";
     const preheader = (input.preheader ?? "").trim();
+    const subject = (input.subject ?? "").trim();
 
     const text = toText(html);
     const words = text.length ? text.split(/\s+/).filter(Boolean) : [];
@@ -142,6 +202,81 @@ export function lintIssue(input: { html: string; preheader?: string | null }): I
         });
     }
 
+    // --- Deliverability / spam-trigger signals (subject + body) -------------
+    // Only surfaced as "info" nudges (not hard warnings): they're heuristics,
+    // and a couple of matches on a real developer newsletter is usually fine.
+    let spamSignalCount = 0;
+    const haystack = `${subject} ${text}`.toLowerCase();
+    const matchedPhrases: string[] = [];
+    for (const phrase of SPAM_TRIGGER_PHRASES) {
+        const re = new RegExp(`(^|[^a-z0-9])(${phrase})([^a-z0-9]|$)`, "i");
+        if (re.test(haystack)) {
+            spamSignalCount += 1;
+            // Recover a clean label from the pattern for display.
+            matchedPhrases.push(phrase.replace(/\\/g, "").replace(/\[- ?\]\??/g, " ").trim());
+        }
+    }
+    if (matchedPhrases.length > 0) {
+        const preview = matchedPhrases.slice(0, 3).map((p) => `\u201c${p}\u201d`).join(", ");
+        const extra = matchedPhrases.length > 3 ? ` +${matchedPhrases.length - 3} more` : "";
+        issues.push({
+            id: "spam-phrases",
+            severity: matchedPhrases.length >= 3 ? "warn" : "info",
+            message: `Spam-trigger phrasing detected (${preview}${extra}) — common phrases can nudge you into Promotions/Spam.`,
+        });
+    }
+
+    // ALL-CAPS subject (only meaningful for a subject with a few real words).
+    if (subject.length >= 8 && uppercaseRatio(subject) >= 0.7) {
+        spamSignalCount += 1;
+        issues.push({
+            id: "subject-caps",
+            severity: "info",
+            message: "Subject is nearly ALL CAPS — reads as shouty and can hurt deliverability.",
+        });
+    }
+
+    // Excessive punctuation in the subject (!!! / ??? / mixed !?!).
+    if (/[!?]{2,}/.test(subject)) {
+        spamSignalCount += 1;
+        issues.push({
+            id: "subject-punct",
+            severity: "info",
+            message: "Repeated “!” or “?” in the subject looks spammy — one is plenty.",
+        });
+    }
+
+    // Money-shout ($$$) anywhere in subject/body.
+    if (/\${2,}/.test(`${subject} ${text}`)) {
+        spamSignalCount += 1;
+        issues.push({
+            id: "money-shout",
+            severity: "info",
+            message: "Multiple “$” in a row ($$$) is a classic spam flag.",
+        });
+    }
+
+    // Emoji overload in the subject (a couple is fine; a pile is a flag).
+    const subjectEmoji = countEmoji(subject);
+    if (subjectEmoji >= 4) {
+        spamSignalCount += 1;
+        issues.push({
+            id: "subject-emoji",
+            severity: "info",
+            message: `${subjectEmoji} emoji in the subject — trim to 1\u20132 so it doesn\u2019t read as spam.`,
+        });
+    }
+
+    // Faked reply/forward prefix in the subject (Re:/Fwd: with no real thread).
+    if (/^\s*(re|fwd?)\s*:/i.test(subject)) {
+        spamSignalCount += 1;
+        issues.push({
+            id: "subject-fake-reply",
+            severity: "warn",
+            message: "Subject starts with “Re:”/“Fwd:” — faking a reply erodes trust and trips spam filters.",
+        });
+    }
+
     return {
         wordCount,
         readingMinutes,
@@ -150,6 +285,7 @@ export function lintIssue(input: { html: string; preheader?: string | null }): I
         imagesMissingAlt,
         emptyLinkCount,
         hasPreheader,
+        spamSignalCount,
         issues,
     };
 }
