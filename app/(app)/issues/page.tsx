@@ -198,6 +198,16 @@ export default async function IssuesArchivePage({ searchParams }: Props) {
         getPublications(),
     ]);
 
+    // The header RSS link points at the active publication's feed when the
+    // archive is filtered to a known (non-archived) publication; otherwise the
+    // site-wide feed. Guard against a stray/unknown ?publication= slug.
+    const activePublicationKnown = publicationSlug
+        ? pubs.some((p) => p.slug === publicationSlug)
+        : false;
+    const activeFeedHref = activePublicationKnown
+        ? `/${publicationSlug}/feed.xml`
+        : "/feed.xml";
+
     // CollectionPage describing the archive, with an embedded ItemList that
     // enumerates every published issue (position-ordered, newest first). Good
     // for rich results and helps crawlers discover the full back-catalogue.
@@ -243,9 +253,13 @@ export default async function IssuesArchivePage({ searchParams }: Props) {
                         </p>
                     </div>
                     <Link
-                        href="/feed.xml"
+                        href={activeFeedHref}
                         className="inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
-                        title="Subscribe via RSS"
+                        title={
+                            publicationSlug
+                                ? "Subscribe to this publication via RSS"
+                                : "Subscribe via RSS"
+                        }
                     >
                         <Rss className="h-3.5 w-3.5" />
                         RSS
