@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
-import { AlertTriangle, CheckCircle2, Circle, Info } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, CheckCircle2, Circle, FileText, Info } from "lucide-react";
 import { lintIssue } from "@/lib/issue-lint";
+import { analyzePlainText } from "@/lib/html-to-text";
 
 /**
  * Read-only pre-send "quality" panel shown in the edit dialog. Analyzes the
@@ -26,10 +27,18 @@ export function IssueLintPanel({
         () => lintIssue({ html, preheader, subject }),
         [html, preheader, subject],
     );
+    const plain = useMemo(() => analyzePlainText(html), [html]);
+    const [showPlainText, setShowPlainText] = useState(false);
 
-    const warnings = result.issues.filter((i) => i.severity === "warn");
-    const infos = result.issues.filter((i) => i.severity === "info");
-    const clean = result.issues.length === 0;
+    // Combine the HTML-quality issues with the plain-text quality issues so the
+    // "looks good" state + counts reflect both.
+    const allIssues = useMemo(
+        () => [...result.issues, ...plain.issues],
+        [result.issues, plain.issues],
+    );
+    const warnings = allIssues.filter((i) => i.severity === "warn");
+    const infos = allIssues.filter((i) => i.severity === "info");
+    const clean = allIssues.length === 0;
 
     return (
         <div className="space-y-3 rounded-none border border-border p-3">
@@ -63,10 +72,37 @@ export function IssueLintPanel({
                 </p>
             )}
 
+            {/* Plain-text preview toggle + generated text/plain body */}
+            <div className="space-y-2">
+                <button
+                    type="button"
+                    onClick={() => setShowPlainText((v) => !v)}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                >
+                    <FileText className="size-3.5" />
+                    {showPlainText ? "Hide" : "Preview"} plain-text version
+                    <span className="text-muted-foreground/70">
+                        ({plain.wordCount.toLocaleString()} word
+                        {plain.wordCount === 1 ? "" : "s"})
+                    </span>
+                </button>
+                {showPlainText && (
+                    <div className="space-y-1">
+                        <p className="text-[11px] text-muted-foreground">
+                            This is the text/plain version text-only clients and spam
+                            filters see (links shown as “text (url)”).
+                        </p>
+                        <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words border border-border bg-muted/30 p-2 text-[11px] leading-relaxed text-foreground">
+                            {plain.text || "(empty — nothing to show)"}
+                        </pre>
+                    </div>
+                )}
+            </div>
+
             {/* Checklist */}
-            {result.issues.length > 0 && (
+            {allIssues.length > 0 && (
                 <ul className="space-y-1.5">
-                    {result.issues.map((issue) => (
+                    {allIssues.map((issue) => (
                         <li key={issue.id} className="flex items-start gap-2 text-xs">
                             {issue.severity === "warn" ? (
                                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
